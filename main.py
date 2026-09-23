@@ -5,8 +5,7 @@ import tkinter as tk
 from tkinter import filedialog, messagebox
 import customtkinter as ctk
 
-# Importa a janela do Workspace/Editor do arquivo separado editor.py
-from editor import WorkspaceStudio
+from editor import VisoraStudioFrame
 
 ctk.set_appearance_mode("Dark")
 ctk.set_default_color_theme("blue")
@@ -65,6 +64,12 @@ class VisoraAppHome(ctk.CTk):
 
         self.projetos_recentes = self.carregar_recentes()[:5]
         self.overlay_canvas = None
+        self.selected_project_data = None
+        self.studio_frame = None
+
+        # Container principal para permitir troca fluida de telas
+        self.home_container = ctk.CTkFrame(self, fg_color="transparent")
+        self.home_container.pack(fill="both", expand=True)
 
         self.build_header()
         self.build_main_content()
@@ -98,16 +103,22 @@ class VisoraAppHome(ctk.CTk):
         return novo
 
     def abrir_workspace_studio(self, project_data):
-        """Abre o Editor e FECHA a janela principal antiga."""
-        self.withdraw()  # Esconde a janela atual
-        editor_win = WorkspaceStudio(project_data=project_data)
+        """Transição na mesma janela (como troca de aba/frame)."""
+        self.selected_project_data = project_data
 
-        # Garante o fechamento total da aplicação ao fechar o editor
-        editor_win.protocol("WM_DELETE_WINDOW", lambda: self.fechar_tudo(editor_win))
-        self.destroy()  # Destroi a janela principal antiga da memória
+        # Oculta a estrutura da tela Home
+        self.home_container.pack_forget()
 
-    def fechar_tudo(self, window):
-        window.destroy()
+        # Garante a destruição de algum frame anterior caso existente
+        if self.studio_frame is not None:
+            if hasattr(self.studio_frame, "destruir_frame"):
+                self.studio_frame.destruir_frame()
+            else:
+                self.studio_frame.destroy()
+
+        # Instancia e exibe o Studio dentro da mesma janela
+        self.studio_frame = VisoraStudioFrame(self, project_data=project_data)
+        self.studio_frame.pack(fill="both", expand=True)
 
     def mostrar_overlay(self):
         if not self.overlay_canvas:
@@ -120,7 +131,7 @@ class VisoraAppHome(ctk.CTk):
             self.overlay_canvas = None
 
     def build_header(self):
-        header = ctk.CTkFrame(self, height=40, corner_radius=0, fg_color="#0b0e14")
+        header = ctk.CTkFrame(self.home_container, height=40, corner_radius=0, fg_color="#0b0e14")
         header.pack(fill="x", side="top")
 
         lbl_brand = ctk.CTkLabel(header, text="SPECTRA CV", font=ctk.CTkFont(size=12, weight="bold"),
@@ -132,7 +143,7 @@ class VisoraAppHome(ctk.CTk):
         lbl_status.pack(side="left", padx=5)
 
     def build_main_content(self):
-        container = ctk.CTkFrame(self, fg_color="transparent")
+        container = ctk.CTkFrame(self.home_container, fg_color="transparent")
         container.pack(fill="both", expand=True, padx=50, pady=20)
 
         lbl_title = ctk.CTkLabel(container, text="Iniciar projeto", font=ctk.CTkFont(size=32, weight="bold"),
