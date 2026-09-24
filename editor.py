@@ -43,6 +43,9 @@ class VisoraStudioFrame(ctk.CTkFrame):
         self.arquivo_selecionado = None
         self.step_atual = 1
         self.midia_eh_video = False
+        self.treino_pausar_solicitado = False
+        self.modelo_treinamento_ativo = None
+        self.pasta_ultimo_treinamento = None
 
         # Referências de Imagens do Canvas
         self.pil_canvas_img = None
@@ -1414,6 +1417,30 @@ class VisoraStudioFrame(ctk.CTkFrame):
         self.entry_epochs.insert(0, "50")
         self.entry_epochs.grid(row=0, column=1, padx=10, pady=10, sticky="w")
 
+        self.var_modo_treinamento = ctk.StringVar(value="novo")
+        ctk.CTkLabel(params_frame, text="Modo:", font=ctk.CTkFont(size=11, weight="bold"),
+                     text_color="#e2e8f0").grid(row=1, column=0, padx=15, pady=10, sticky="w")
+        ctk.CTkRadioButton(
+            params_frame, text="Novo treinamento", variable=self.var_modo_treinamento, value="novo",
+            command=self.atualizar_modo_treinamento
+        ).grid(row=1, column=1, padx=10, pady=10, sticky="w")
+        ctk.CTkRadioButton(
+            params_frame, text="Continuar treinamento", variable=self.var_modo_treinamento, value="continuar",
+            command=self.atualizar_modo_treinamento
+        ).grid(row=1, column=2, padx=10, pady=10, sticky="w")
+
+        self.entry_pasta_treinamento = ctk.CTkEntry(
+            params_frame, width=360, height=28, fg_color="#080a0f",
+            placeholder_text="Selecione a pasta que contém o checkpoint last.pt"
+        )
+        self.entry_pasta_treinamento.grid(row=2, column=1, padx=10, pady=(0, 10), sticky="ew")
+        self.btn_pasta_treinamento = ctk.CTkButton(
+            params_frame, text="Selecionar pasta", width=130, height=28,
+            command=self.selecionar_pasta_treinamento
+        )
+        self.btn_pasta_treinamento.grid(row=2, column=2, padx=10, pady=(0, 10), sticky="w")
+        self.atualizar_modo_treinamento()
+
         # Console de Logs do Treinamento
         lbl_log = ctk.CTkLabel(self.frame_treinamento, text="Logs do Treinamento:",
                                font=ctk.CTkFont(size=12, weight="bold"), text_color="#94a3b8", anchor="w")
@@ -1429,6 +1456,55 @@ class VisoraStudioFrame(ctk.CTkFrame):
             command=self.iniciar_treinamento_modelo
         )
         self.btn_iniciar_treino.pack(padx=20, pady=(0, 20), anchor="w")
+
+        self.btn_pausar_treino = ctk.CTkButton(
+            self.frame_treinamento, text="⏸ Pausar Treinamento", width=220, height=38,
+            fg_color="#d97706", hover_color="#b45309", font=ctk.CTkFont(size=12, weight="bold"),
+            state="disabled", command=self.solicitar_pausa_treinamento
+        )
+        self.btn_pausar_treino.pack(padx=20, pady=(0, 20), anchor="w")
+
+    def atualizar_modo_treinamento(self):
+        continuar = self.var_modo_treinamento.get() == "continuar"
+        estado = "normal" if continuar else "disabled"
+        self.entry_pasta_treinamento.configure(state=estado)
+        self.btn_pasta_treinamento.configure(state=estado)
+
+    def selecionar_pasta_treinamento(self):
+        pasta = filedialog.askdirectory(title="Selecione a pasta do treinamento anterior")
+        if pasta:
+            self.entry_pasta_treinamento.configure(state="normal")
+            self.entry_pasta_treinamento.delete(0, "end")
+            self.entry_pasta_treinamento.insert(0, pasta)
+
+    def solicitar_pausa_treinamento(self):
+        if self.modelo_treinamento_ativo is None:
+            return
+        self.treino_pausar_solicitado = True
+        self.btn_pausar_treino.configure(state="disabled", text="⏳ Pausando...")
+        self.log_treinamento("[INFO] Pausa solicitada. O treinamento será interrompido ao fim da época atual...")
+        treinador = getattr(self.modelo_treinamento_ativo, "trainer", None)
+        if treinador is not None:
+            treinador.stop = True
+
+    def localizar_checkpoint_treinamento(self, pasta):
+        if os.path.isfile(pasta) and os.path.basename(pasta).lower() == "last.pt":
+            return pasta
+        if not os.path.isdir(pasta):
+            return None
+
+        candidatos = [
+            os.path.join(pasta, "weights", "last.pt"),
+            os.path.join(pasta, "last.pt")
+        ]
+        for candidato in candidatos:
+            if os.path.isfile(candidato):
+                return candidato
+
+        for raiz, _, arquivos in os.walk(pasta):
+            if "last.pt" in arquivos:
+                return os.path.join(raiz, "last.pt")
+        return None
 
     def log_treinamento(self, mensagem):
         """Função auxiliar para escrever mensagens no console da interface Tkinter."""
@@ -1447,7 +1523,10 @@ class VisoraStudioFrame(ctk.CTkFrame):
                 return
 
             self.btn_iniciar_treino.configure(state="disabled")
-            self.mostrar_carregamento("Treinando modelo YOLO...")
+            self.btn_pausar_treino.configure(state="normal")
+            self.treino_pausar_solicitado = False
+            mensagem = "Continuando treinamento YOLO..." if self.var_modo_treinamento.get() == "continuar" else "Treinando modelo YOLO..."
+            self.mostrar_carregamento(mensagem)
             threading.Thread(target=self._treinar_yolo_threaded, daemon=True).start()
         else:
             self.btn_iniciar_treino.configure(state="disabled")
@@ -1457,6 +1536,8 @@ class VisoraStudioFrame(ctk.CTkFrame):
     def _treinar_yolo_threaded(self):
         caminho_proj = self.project_data.get("caminho", "")
         pasta_annotations = os.path.join(caminho_proj, "annotations")
+        continuar = self.var_modo_treinamento.get() == "continuar"
+        pasta_checkpoint = self.entry_pasta_treinamento.get().strip() if continuar else ""
 
         try:
             epochs = int(self.entry_epochs.get().strip())
@@ -1470,8 +1551,30 @@ class VisoraStudioFrame(ctk.CTkFrame):
             return
 
         try:
-            self.after(0, lambda: self.log_treinamento("[YOLO] Carregando modelo pré-treinado yolov8n.pt..."))
-            model = YOLO("yolov8n.pt")
+            if continuar:
+                checkpoint = self.localizar_checkpoint_treinamento(pasta_checkpoint)
+                if not checkpoint:
+                    self.after(0, lambda: self._finalizar_treino_com_erro(
+                        "Nenhum arquivo last.pt foi encontrado na pasta selecionada."
+                    ))
+                    return
+                self.after(0, lambda: self.log_treinamento(
+                    f"[YOLO] Continuando a partir de: {checkpoint}"
+                ))
+                model = YOLO(checkpoint)
+            else:
+                self.after(0, lambda: self.log_treinamento(
+                    "[YOLO] Carregando modelo pré-treinado yolov8n.pt..."
+                ))
+                model = YOLO("yolov8n.pt")
+
+            self.modelo_treinamento_ativo = model
+
+            def verificar_pausa(treinador):
+                if self.treino_pausar_solicitado:
+                    treinador.stop = True
+
+            model.add_callback("on_train_epoch_end", verificar_pausa)
 
             classes_encontradas = set()
             for f in os.listdir(pasta_annotations):
@@ -1500,15 +1603,26 @@ class VisoraStudioFrame(ctk.CTkFrame):
             self.after(0, lambda: self.log_treinamento(f"[YOLO] Iniciando fit com {epochs} épocas..."))
 
             # Execução do Treinamento YOLO (workers=0 evita erros de multiprocessamento em Threads GUI)
-            results = model.train(
-                data=yaml_path,
-                epochs=epochs,
-                imgsz=640,
-                workers=0,
-                project=os.path.join(caminho_proj, "runs"),
-                name="yolo_train_results",
-                verbose=False
-            )
+            parametros_treino = {
+                "data": yaml_path,
+                "epochs": epochs,
+                "imgsz": 640,
+                "workers": 0,
+                "project": os.path.join(caminho_proj, "runs"),
+                "name": "yolo_train_results",
+                "verbose": False
+            }
+            if continuar:
+                parametros_treino["resume"] = True
+            self.pasta_ultimo_treinamento = os.path.join(caminho_proj, "runs", "yolo_train_results")
+            model.train(**parametros_treino)
+
+            if self.treino_pausar_solicitado:
+                self.after(0, lambda: self._finalizar_treino_com_sucesso(
+                    "Treinamento pausado. Para continuar, selecione a pasta:\n"
+                    f"{self.pasta_ultimo_treinamento}"
+                ))
+                return
 
             self.after(0, lambda: self.log_treinamento(
                 f"[YOLO] Treinamento concluído com sucesso! Resultados salvos em 'runs/yolo_train_results'."))
@@ -1539,11 +1653,15 @@ class VisoraStudioFrame(ctk.CTkFrame):
     def _finalizar_treino_com_sucesso(self, mensagem):
         self.esconder_carregamento()
         self.btn_iniciar_treino.configure(state="normal")
+        self.btn_pausar_treino.configure(state="disabled", text="⏸ Pausar Treinamento")
+        self.modelo_treinamento_ativo = None
         messagebox.showinfo("Sucesso", mensagem)
 
     def _finalizar_treino_com_erro(self, mensagem):
         self.esconder_carregamento()
         self.btn_iniciar_treino.configure(state="normal")
+        self.btn_pausar_treino.configure(state="disabled", text="⏸ Pausar Treinamento")
+        self.modelo_treinamento_ativo = None
         self.log_treinamento(f"[ERRO] {mensagem}")
         messagebox.showerror("Erro no Treinamento", mensagem)
 
