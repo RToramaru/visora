@@ -203,8 +203,8 @@ class VisoraStudioFrame(ctk.CTkFrame):
         self.canvas_anotacao = ctk.CTkCanvas(self.display_container, bg="#05070a", highlightthickness=0)
         self.vincular_eventos_canvas()
 
-        # PAINEL DE PROPAGAÇÃO (Etapa 3)
-        self.frame_propagacao = ctk.CTkFrame(self.display_container, fg_color="#0b0e14", corner_radius=8)
+        # PAINEL DE PROPAGAÇÃO (Etapa 3 - Scrollable para caber as explicações detalhadas)
+        self.frame_propagacao = ctk.CTkScrollableFrame(self.display_container, fg_color="#0b0e14", corner_radius=8)
         self.build_ui_propagacao()
 
         # PAINEL DE REVISAR (Etapa 4)
@@ -445,36 +445,77 @@ class VisoraStudioFrame(ctk.CTkFrame):
             self.frame_propagacao, text="⚡ Escolha o Método de Propagação Baseado nas suas Amostras",
             font=ctk.CTkFont(size=15, weight="bold"), text_color="#38bdf8", anchor="w"
         )
-        lbl_title.pack(fill="x", padx=20, pady=(20, 10))
+        lbl_title.pack(fill="x", padx=10, pady=(15, 5))
 
         lbl_desc = ctk.CTkLabel(
             self.frame_propagacao,
-            text="As imagens que você rotulou na etapa anterior servirão de base para preencher os quadros restantes.",
-            font=ctk.CTkFont(size=12), text_color="#94a3b8", justify="left"
+            text="As imagens que você rotulou na etapa anterior servirão de base para preencher automaticamente os quadros restantes do seu dataset.",
+            font=ctk.CTkFont(size=12), text_color="#94a3b8", justify="left", wraplength=700
         )
-        lbl_desc.pack(fill="x", padx=20, pady=(0, 20))
+        lbl_desc.pack(fill="x", padx=10, pady=(0, 15))
+
+        # --- CARTÃO MÉTODO 1 ---
+        card_molde = ctk.CTkFrame(self.frame_propagacao, fg_color="#111622", border_width=1, border_color="#1e293b", corner_radius=6)
+        card_molde.pack(fill="x", padx=10, pady=6)
+
+        lbl_m1 = ctk.CTkLabel(card_molde, text="1️⃣ Propagação por Interpolagem / Clonagem de Referências", font=ctk.CTkFont(size=12, weight="bold"), text_color="#e2e8f0")
+        lbl_m1.pack(anchor="w", padx=15, pady=(12, 4))
+
+        desc_m1 = ctk.CTkLabel(
+            card_molde,
+            text="• Como funciona: Utiliza as anotações feitas nas suas amostras-chave e as replica/distribui sequencialmente para preencher os frames que estão vazios no intervalo.\n• Ideal para: Cenas estáticas ou com pouca movimentação onde a referência manual serve de molde fixo.",
+            font=ctk.CTkFont(size=11), text_color="#94a3b8", justify="left", wraplength=680
+        )
+        desc_m1.pack(anchor="w", padx=15, pady=(0, 8))
 
         btn_molde = ctk.CTkButton(
-            self.frame_propagacao, text="1️⃣ Propagação por Interpolagem/Clonagem de Referências", width=400, height=42,
-            fg_color="#1e293b", hover_color="#334155", font=ctk.CTkFont(size=12, weight="bold"),
+            card_molde, text="Executar Interpolagem", width=180, height=32,
+            fg_color="#1e293b", hover_color="#334155", font=ctk.CTkFont(size=11, weight="bold"),
             command=lambda: self.executar_modelo_propagacao("molde")
         )
-        btn_molde.pack(padx=20, pady=6, anchor="w")
+        btn_molde.pack(anchor="w", padx=15, pady=(0, 12))
+
+        # --- CARTÃO MÉTODO 2 ---
+        card_opencv = ctk.CTkFrame(self.frame_propagacao, fg_color="#111622", border_width=1, border_color="#1e293b", corner_radius=6)
+        card_opencv.pack(fill="x", padx=10, pady=6)
+
+        lbl_m2 = ctk.CTkLabel(card_opencv, text="2️⃣ Rastreamento Temporal OpenCV (Multi-Tracking)", font=ctk.CTkFont(size=12, weight="bold"), text_color="#e2e8f0")
+        lbl_m2.pack(anchor="w", padx=15, pady=(12, 4))
+
+        desc_m2 = ctk.CTkLabel(
+            card_opencv,
+            text="• Como funciona: Emprega algoritmos tradicionais de visão computacional para seguir os pixels e contornos das anotações quadro a quadro ao longo do tempo.\n• Ideal para: Vídeos fluidos onde os objetos possuem trajetória contínua e previsível.",
+            font=ctk.CTkFont(size=11), text_color="#94a3b8", justify="left", wraplength=680
+        )
+        desc_m2.pack(anchor="w", padx=15, pady=(0, 8))
 
         btn_opencv = ctk.CTkButton(
-            self.frame_propagacao, text="2️⃣ Rastreamento Temporal OpenCV (Multi-Tracking)", width=400, height=42,
-            fg_color="#1e293b", hover_color="#334155", font=ctk.CTkFont(size=12, weight="bold"),
+            card_opencv, text="Executar OpenCV Tracking", width=180, height=32,
+            fg_color="#1e293b", hover_color="#334155", font=ctk.CTkFont(size=11, weight="bold"),
             command=lambda: self.executar_modelo_propagacao("opencv")
         )
-        btn_opencv.pack(padx=20, pady=6, anchor="w")
+        btn_opencv.pack(anchor="w", padx=15, pady=(0, 12))
+
+        # --- CARTÃO MÉTODO 3 ---
+        card_yolo = ctk.CTkFrame(self.frame_propagacao, fg_color="#111622", border_width=1, border_color="#2563eb", corner_radius=6)
+        card_yolo.pack(fill="x", padx=10, pady=6)
+
+        lbl_m3 = ctk.CTkLabel(card_yolo, text="3️⃣ Modelo Ultralytics YOLO (Treinamento Rápido / Inferência Inteligente)", font=ctk.CTkFont(size=12, weight="bold"), text_color="#38bdf8")
+        lbl_m3.pack(anchor="w", padx=15, pady=(12, 4))
+
+        desc_m3 = ctk.CTkLabel(
+            card_yolo,
+            text="• Como funciona: Utiliza inteligência artificial avançada baseada em deep learning (YOLO) para analisar todas as imagens do dataset e detectar os objetos automaticamente com alta precisão.\n• Ideal para: Datasets complexos, com múltiplos objetos dinâmicos, garantindo detecção inteligente e automatizada em larga escala.",
+            font=ctk.CTkFont(size=11), text_color="#94a3b8", justify="left", wraplength=680
+        )
+        desc_m3.pack(anchor="w", padx=15, pady=(0, 8))
 
         btn_yolo = ctk.CTkButton(
-            self.frame_propagacao, text="3️⃣ Modelo Ultralytics YOLO (Treinamento Rápido / Inferência)", width=400,
-            height=42,
-            fg_color="#2563eb", hover_color="#1d4ed8", font=ctk.CTkFont(size=12, weight="bold"),
+            card_yolo, text="Executar YOLO AI", width=180, height=32,
+            fg_color="#2563eb", hover_color="#1d4ed8", font=ctk.CTkFont(size=11, weight="bold"),
             command=lambda: self.executar_modelo_propagacao("yolo")
         )
-        btn_yolo.pack(padx=20, pady=6, anchor="w")
+        btn_yolo.pack(anchor="w", padx=15, pady=(0, 12))
 
     def executar_modelo_propagacao(self, metodo):
         caminho_proj = self.project_data.get("caminho", "")
