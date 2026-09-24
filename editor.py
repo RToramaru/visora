@@ -322,7 +322,6 @@ class VisoraStudioFrame(ctk.CTkFrame):
                                    hover_color="#dc2626", command=self.limpar_anotacoes)
         btn_limpar.pack(side="left", padx=10)
 
-        # Botões de Navegação entre Amostras para rotular quantas quiser
         btn_prox_amostra = ctk.CTkButton(
             self.action_bar, text="Próxima Amostra ⏭", width=130, height=28,
             fg_color="#334155", hover_color="#475569", font=ctk.CTkFont(size=11),
@@ -354,7 +353,7 @@ class VisoraStudioFrame(ctk.CTkFrame):
     def render_action_bar_etapa4(self):
         for w in self.action_bar.winfo_children():
             w.destroy()
-        lbl = ctk.CTkLabel(self.action_bar, text="🔍 REVISÃO VISUAL E EXCLUSÃO EM LOTE",
+        lbl = ctk.CTkLabel(self.action_bar, text="🔍 REVISÃO VISUAL E EXCLUSÃO EM LOTE / TODAS",
                            font=ctk.CTkFont(size=11, weight="bold"), text_color="#38bdf8")
         lbl.pack(side="left", padx=15)
 
@@ -515,7 +514,7 @@ class VisoraStudioFrame(ctk.CTkFrame):
                         dest_rotulo = os.path.join(pasta_annotations, f"{nome_base}{ext_rotulo}")
 
                         if os.path.exists(dest_rotulo):
-                            continue  # Preserva as imagens que já foram rotuladas manualmente pelo usuário
+                            continue
 
                         results = model(img_path, verbose=False)
                         pil_img = Image.open(img_path)
@@ -578,7 +577,7 @@ class VisoraStudioFrame(ctk.CTkFrame):
 
         threading.Thread(target=_processar, daemon=True).start()
 
-    # ==================== IMPLEMENTAÇÃO ETAPA 4: REVISÃO COM EXCLUSÃO EM LOTE ====================
+    # ==================== IMPLEMENTAÇÃO ETAPA 4: REVISÃO, EXCLUSÃO LOTE E TODAS ====================
     def build_ui_revisar(self):
         self.rev_left_frame = ctk.CTkScrollableFrame(self.frame_revisar, width=340, fg_color="#111622", corner_radius=6)
         self.rev_left_frame.pack(side="left", fill="y", padx=10, pady=10)
@@ -612,7 +611,15 @@ class VisoraStudioFrame(ctk.CTkFrame):
             fg_color="#b91c1c", hover_color="#991b1b", font=ctk.CTkFont(size=11, weight="bold"),
             command=self.excluir_anotacoes_em_lote
         )
-        self.btn_excluir_lote.pack(pady=(0, 15))
+        self.btn_excluir_lote.pack(pady=(0, 5))
+
+        # Botão Excluir Todas
+        self.btn_excluir_todas = ctk.CTkButton(
+            self.rev_right_frame, text="💥 Excluir Todas as Anotações", width=300, height=30,
+            fg_color="#7f1d1d", hover_color="#651c1c", font=ctk.CTkFont(size=11, weight="bold"),
+            command=self.excluir_todas_as_anotacoes
+        )
+        self.btn_excluir_todas.pack(pady=(0, 15))
 
     def popular_revisao_visual(self):
         for w in self.rev_left_frame.winfo_children():
@@ -770,6 +777,33 @@ class VisoraStudioFrame(ctk.CTkFrame):
             self.rev_info_lbl.configure(text="Selecione um frame ao lado para auditar.")
         else:
             messagebox.showwarning("Aviso", "Nenhum item foi marcado com checkbox para exclusão em lote.")
+
+    def excluir_todas_as_anotacoes(self):
+        caminho_proj = self.project_data.get("caminho", "")
+        pasta_annotations = os.path.join(caminho_proj, "annotations")
+
+        if not os.path.exists(pasta_annotations):
+            messagebox.showwarning("Aviso", "Nenhuma pasta de anotações encontrada.")
+            return
+
+        if not messagebox.askyesno("Confirmação",
+                                   "Tem certeza absoluta que deseja excluir TODAS as anotações do projeto?"):
+            return
+
+        removidos_count = 0
+        for f in os.listdir(pasta_annotations):
+            if f.endswith(('.xml', '.json')):
+                p = os.path.join(pasta_annotations, f)
+                try:
+                    os.remove(p)
+                    removidos_count += 1
+                except Exception:
+                    pass
+
+        messagebox.showinfo("Sucesso", f"Todas as {removidos_count} anotações foram excluídas com sucesso!")
+        self.popular_revisao_visual()
+        self.rev_canvas.delete("all")
+        self.rev_info_lbl.configure(text="Selecione um frame ao lado para auditar.")
 
     # ==================== CARREGAR MÚLTIPLAS AMOSTRAS (ETAPA 2) ====================
     def carregar_lista_amostras_para_rotulo(self):
