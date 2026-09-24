@@ -46,6 +46,9 @@ class VisoraStudioFrame(ctk.CTkFrame):
         self.treino_pausar_solicitado = False
         self.modelo_treinamento_ativo = None
         self.pasta_ultimo_treinamento = None
+        self.caminho_modelo_visualizacao = ""
+        self.caminho_imagem_visualizacao = ""
+        self.caminho_modelo_exportacao = ""
 
         # Referências de Imagens do Canvas
         self.pil_canvas_img = None
@@ -108,7 +111,9 @@ class VisoraStudioFrame(ctk.CTkFrame):
             (3, "PROPAGAR ANOTAÇÃO"),
             (4, "REVISAR"),
             (5, "EXPORTAR DATASET"),
-            (6, "TREINAR MODELO")
+            (6, "TREINAR MODELO"),
+            (7, "VISUALIZAR TREINAMENTO"),
+            (8, "EXPORTAR MODELO")
         ]
 
         steps_container = ctk.CTkFrame(stepper_bar, fg_color="transparent")
@@ -227,6 +232,14 @@ class VisoraStudioFrame(ctk.CTkFrame):
         # PAINEL DE TREINAMENTO (Etapa 6)
         self.frame_treinamento = ctk.CTkFrame(self.display_container, fg_color="#0b0e14", corner_radius=8)
         self.build_ui_treinamento()
+
+        # PAINEL DE VISUALIZAÇÃO DO MODELO (Etapa 7)
+        self.frame_visualizar_modelo = ctk.CTkFrame(self.display_container, fg_color="#0b0e14", corner_radius=8)
+        self.build_ui_visualizar_modelo()
+
+        # PAINEL DE EXPORTAÇÃO DO MODELO (Etapa 8)
+        self.frame_exportar_modelo = ctk.CTkFrame(self.display_container, fg_color="#0b0e14", corner_radius=8)
+        self.build_ui_exportar_modelo()
 
         # PAINEL OVERLAY DE CARREGAMENTO
         self.overlay_loading = ctk.CTkFrame(self.display_container, fg_color="#0b0e14", corner_radius=8)
@@ -398,6 +411,20 @@ class VisoraStudioFrame(ctk.CTkFrame):
                            font=ctk.CTkFont(size=11, weight="bold"), text_color="#a855f7")
         lbl.pack(side="left", padx=15)
 
+    def render_action_bar_etapa7(self):
+        for w in self.action_bar.winfo_children():
+            w.destroy()
+        lbl = ctk.CTkLabel(self.action_bar, text="🔎 VISUALIZAÇÃO E TESTE DO MODELO",
+                           font=ctk.CTkFont(size=11, weight="bold"), text_color="#22c55e")
+        lbl.pack(side="left", padx=15)
+
+    def render_action_bar_etapa8(self):
+        for w in self.action_bar.winfo_children():
+            w.destroy()
+        lbl = ctk.CTkLabel(self.action_bar, text="📤 EXPORTAÇÃO DO MODELO TREINADO",
+                           font=ctk.CTkFont(size=11, weight="bold"), text_color="#f59e0b")
+        lbl.pack(side="left", padx=15)
+
     def mudar_passo(self, step_id):
         self.step_atual = step_id
         for idx, btn in self.steps_btn.items():
@@ -412,6 +439,8 @@ class VisoraStudioFrame(ctk.CTkFrame):
         self.frame_revisar.pack_forget()
         self.frame_exportar.pack_forget()
         self.frame_treinamento.pack_forget()
+        self.frame_visualizar_modelo.pack_forget()
+        self.frame_exportar_modelo.pack_forget()
 
         if step_id == 1:
             self.lbl_preview.pack(fill="both", expand=True)
@@ -473,6 +502,226 @@ class VisoraStudioFrame(ctk.CTkFrame):
             self.esconder_painel_propriedades()
             self.render_action_bar_etapa6()
             self.frame_treinamento.pack(fill="both", expand=True, padx=20, pady=20)
+
+        elif step_id == 7:
+            self.parar_video()
+            self.video_controls_frame.pack_forget()
+            self.esconder_painel_propriedades()
+            self.render_action_bar_etapa7()
+            self.frame_visualizar_modelo.pack(fill="both", expand=True, padx=20, pady=20)
+
+        elif step_id == 8:
+            self.parar_video()
+            self.video_controls_frame.pack_forget()
+            self.esconder_painel_propriedades()
+            self.render_action_bar_etapa8()
+            self.frame_exportar_modelo.pack(fill="both", expand=True, padx=20, pady=20)
+
+    def build_ui_visualizar_modelo(self):
+        ctk.CTkLabel(
+            self.frame_visualizar_modelo, text="Visualizar resultado do treinamento",
+            font=ctk.CTkFont(size=15, weight="bold"), text_color="#22c55e", anchor="w"
+        ).pack(fill="x", padx=20, pady=(20, 10))
+
+        controles = ctk.CTkFrame(self.frame_visualizar_modelo, fg_color="#111622", corner_radius=6)
+        controles.pack(fill="x", padx=20, pady=10)
+        controles.columnconfigure(1, weight=1)
+
+        ctk.CTkLabel(controles, text="Modelo treinado:", text_color="#e2e8f0").grid(
+            row=0, column=0, padx=15, pady=10, sticky="w"
+        )
+        self.entry_modelo_visualizacao = ctk.CTkEntry(controles, height=28, fg_color="#080a0f")
+        self.entry_modelo_visualizacao.grid(row=0, column=1, padx=10, pady=10, sticky="ew")
+        ctk.CTkButton(controles, text="Selecionar", width=110, height=28,
+                      command=self.selecionar_modelo_visualizacao).grid(row=0, column=2, padx=10, pady=10)
+
+        ctk.CTkLabel(controles, text="Imagem para testar:", text_color="#e2e8f0").grid(
+            row=1, column=0, padx=15, pady=10, sticky="w"
+        )
+        self.entry_imagem_visualizacao = ctk.CTkEntry(controles, height=28, fg_color="#080a0f")
+        self.entry_imagem_visualizacao.grid(row=1, column=1, padx=10, pady=10, sticky="ew")
+        ctk.CTkButton(controles, text="Selecionar", width=110, height=28,
+                      command=self.selecionar_imagem_visualizacao).grid(row=1, column=2, padx=10, pady=10)
+
+        ctk.CTkButton(
+            controles, text="Executar inferência", width=180, height=34,
+            fg_color="#22c55e", hover_color="#16a34a", command=self.executar_inferencia_modelo
+        ).grid(row=2, column=1, padx=10, pady=(5, 15), sticky="w")
+
+        self.lbl_resultado_visualizacao = ctk.CTkLabel(
+            self.frame_visualizar_modelo, text="Selecione um modelo e uma imagem para visualizar as detecções.",
+            text_color="#94a3b8"
+        )
+        self.lbl_resultado_visualizacao.pack(fill="both", expand=True, padx=20, pady=20)
+
+    def build_ui_exportar_modelo(self):
+        ctk.CTkLabel(
+            self.frame_exportar_modelo, text="Exportar modelo treinado",
+            font=ctk.CTkFont(size=15, weight="bold"), text_color="#f59e0b", anchor="w"
+        ).pack(fill="x", padx=20, pady=(20, 10))
+
+        controles = ctk.CTkFrame(self.frame_exportar_modelo, fg_color="#111622", corner_radius=6)
+        controles.pack(fill="x", padx=20, pady=10)
+        controles.columnconfigure(1, weight=1)
+
+        ctk.CTkLabel(controles, text="Modelo treinado:", text_color="#e2e8f0").grid(
+            row=0, column=0, padx=15, pady=10, sticky="w"
+        )
+        self.entry_modelo_exportacao = ctk.CTkEntry(controles, height=28, fg_color="#080a0f")
+        self.entry_modelo_exportacao.grid(row=0, column=1, padx=10, pady=10, sticky="ew")
+        ctk.CTkButton(controles, text="Selecionar", width=110, height=28,
+                      command=self.selecionar_modelo_exportacao).grid(row=0, column=2, padx=10, pady=10)
+
+        ctk.CTkLabel(controles, text="Formato de saída:", text_color="#e2e8f0").grid(
+            row=1, column=0, padx=15, pady=10, sticky="w"
+        )
+        self.var_formato_modelo = ctk.StringVar(value="onnx")
+        ctk.CTkOptionMenu(
+            controles, variable=self.var_formato_modelo,
+            values=["onnx", "pt", "pth", "torchscript", "engine", "coreml", "tflite"], width=180
+        ).grid(row=1, column=1, padx=10, pady=10, sticky="w")
+
+        ctk.CTkLabel(controles, text="Pasta de destino:", text_color="#e2e8f0").grid(
+            row=2, column=0, padx=15, pady=10, sticky="w"
+        )
+        self.entry_destino_modelo = ctk.CTkEntry(controles, height=28, fg_color="#080a0f")
+        self.entry_destino_modelo.grid(row=2, column=1, padx=10, pady=10, sticky="ew")
+        ctk.CTkButton(controles, text="Selecionar", width=110, height=28,
+                      command=self.selecionar_destino_modelo).grid(row=2, column=2, padx=10, pady=10)
+
+        ctk.CTkButton(
+            controles, text="Exportar modelo", width=180, height=34,
+            fg_color="#f59e0b", hover_color="#d97706", command=self.executar_exportacao_modelo
+        ).grid(row=3, column=1, padx=10, pady=(5, 15), sticky="w")
+
+        self.lbl_status_exportacao_modelo = ctk.CTkLabel(
+            self.frame_exportar_modelo, text="O formato .pt mantém o checkpoint original; os demais usam a exportação do Ultralytics.",
+            text_color="#94a3b8", anchor="w", justify="left"
+        )
+        self.lbl_status_exportacao_modelo.pack(fill="x", padx=20, pady=10)
+
+    def selecionar_modelo_visualizacao(self):
+        caminho = filedialog.askopenfilename(
+            title="Selecione o modelo treinado",
+            filetypes=[("Modelos", "*.pt *.onnx *.engine *.torchscript"), ("Todos os arquivos", "*.*")]
+        )
+        if caminho:
+            self.caminho_modelo_visualizacao = caminho
+            self.entry_modelo_visualizacao.delete(0, "end")
+            self.entry_modelo_visualizacao.insert(0, caminho)
+
+    def selecionar_imagem_visualizacao(self):
+        caminho = filedialog.askopenfilename(
+            title="Selecione a imagem para testar",
+            filetypes=[("Imagens", "*.png *.jpg *.jpeg *.bmp *.tiff *.webp"), ("Todos os arquivos", "*.*")]
+        )
+        if caminho:
+            self.caminho_imagem_visualizacao = caminho
+            self.entry_imagem_visualizacao.delete(0, "end")
+            self.entry_imagem_visualizacao.insert(0, caminho)
+
+    def executar_inferencia_modelo(self):
+        if not ULTRALYTICS_DISPONIVEL:
+            messagebox.showerror("Erro", "A biblioteca Ultralytics não está instalada no ambiente.")
+            return
+        caminho_modelo = self.entry_modelo_visualizacao.get().strip()
+        caminho_imagem = self.entry_imagem_visualizacao.get().strip()
+        if not os.path.isfile(caminho_modelo) or not os.path.isfile(caminho_imagem):
+            messagebox.showwarning("Aviso", "Selecione um modelo e uma imagem válidos.")
+            return
+
+        self.mostrar_carregamento("Aplicando modelo na imagem...")
+        threading.Thread(
+            target=self._executar_inferencia_modelo_threaded,
+            args=(caminho_modelo, caminho_imagem), daemon=True
+        ).start()
+
+    def _executar_inferencia_modelo_threaded(self, caminho_modelo, caminho_imagem):
+        try:
+            modelo = YOLO(caminho_modelo)
+            resultado = modelo(caminho_imagem, verbose=False)[0]
+            imagem_rgb = cv2.cvtColor(resultado.plot(), cv2.COLOR_BGR2RGB)
+            imagem = Image.fromarray(imagem_rgb)
+            self.after(0, lambda: self._mostrar_resultado_inferencia(imagem))
+        except Exception as erro:
+            erro_msg = str(erro)
+            self.after(0, lambda: messagebox.showerror("Erro", f"Falha ao aplicar o modelo:\n{erro_msg}"))
+        finally:
+            self.after(0, self.esconder_carregamento)
+
+    def _mostrar_resultado_inferencia(self, imagem):
+        largura = max(500, self.frame_visualizar_modelo.winfo_width() - 50)
+        altura = max(350, self.frame_visualizar_modelo.winfo_height() - 180)
+        imagem.thumbnail((largura, altura), Image.Resampling.LANCZOS)
+        imagem_ctk = ctk.CTkImage(
+            light_image=imagem, dark_image=imagem, size=(imagem.width, imagem.height)
+        )
+        self.lbl_resultado_visualizacao.configure(image=imagem_ctk, text="")
+        self.lbl_resultado_visualizacao.image = imagem_ctk
+
+    def selecionar_modelo_exportacao(self):
+        caminho = filedialog.askopenfilename(
+            title="Selecione o modelo treinado",
+            filetypes=[("Modelos", "*.pt *.onnx *.engine *.torchscript"), ("Todos os arquivos", "*.*")]
+        )
+        if caminho:
+            self.caminho_modelo_exportacao = caminho
+            self.entry_modelo_exportacao.delete(0, "end")
+            self.entry_modelo_exportacao.insert(0, caminho)
+
+    def selecionar_destino_modelo(self):
+        caminho = filedialog.askdirectory(title="Selecione a pasta de destino do modelo")
+        if caminho:
+            self.entry_destino_modelo.delete(0, "end")
+            self.entry_destino_modelo.insert(0, caminho)
+
+    def executar_exportacao_modelo(self):
+        if not ULTRALYTICS_DISPONIVEL:
+            messagebox.showerror("Erro", "A biblioteca Ultralytics não está instalada no ambiente.")
+            return
+        caminho_modelo = self.entry_modelo_exportacao.get().strip()
+        pasta_destino = self.entry_destino_modelo.get().strip()
+        formato = self.var_formato_modelo.get()
+        if not os.path.isfile(caminho_modelo) or not os.path.isdir(pasta_destino):
+            messagebox.showwarning("Aviso", "Selecione um modelo e uma pasta de destino válidos.")
+            return
+
+        self.mostrar_carregamento(f"Exportando modelo para {formato}...")
+        threading.Thread(
+            target=self._executar_exportacao_modelo_threaded,
+            args=(caminho_modelo, pasta_destino, formato), daemon=True
+        ).start()
+
+    def _executar_exportacao_modelo_threaded(self, caminho_modelo, pasta_destino, formato):
+        try:
+            nome_base = os.path.splitext(os.path.basename(caminho_modelo))[0]
+            if formato in ("pt", "pth"):
+                destino = os.path.join(pasta_destino, f"{nome_base}.{formato}")
+                shutil.copy2(caminho_modelo, destino)
+            else:
+                modelo = YOLO(caminho_modelo)
+                resultado = modelo.export(format=formato)
+                origem_exportada = os.fspath(resultado) if resultado else ""
+                if not os.path.exists(origem_exportada):
+                    origem_exportada = os.path.splitext(caminho_modelo)[0] + f".{formato}"
+                if not os.path.exists(origem_exportada):
+                    raise FileNotFoundError(
+                        f"O Ultralytics não retornou o arquivo exportado para o formato {formato}."
+                    )
+
+                destino = os.path.join(pasta_destino, f"{nome_base}.{formato}")
+                if os.path.isdir(origem_exportada):
+                    shutil.copytree(origem_exportada, destino, dirs_exist_ok=True)
+                else:
+                    shutil.copy2(origem_exportada, destino)
+            self.after(0, lambda: messagebox.showinfo(
+                "Sucesso", f"Modelo exportado com sucesso para:\n{destino}"
+            ))
+        except Exception as erro:
+            erro_msg = str(erro)
+            self.after(0, lambda: messagebox.showerror("Erro", f"Falha ao exportar o modelo:\n{erro_msg}"))
+        finally:
+            self.after(0, self.esconder_carregamento)
 
     # ==================== IMPLEMENTAÇÃO ETAPA 3: PROPAGAÇÃO MULTI-AMOSTRA ====================
     def build_ui_propagacao(self):
