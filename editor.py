@@ -9,6 +9,14 @@ import customtkinter as ctk
 from tkinter import filedialog, messagebox
 from PIL import Image, ImageTk
 
+# Importação opcional segura do Ultralytics YOLO
+try:
+    from ultralytics import YOLO
+
+    ULTRALYTICS_DISPONIVEL = True
+except ImportError:
+    ULTRALYTICS_DISPONIVEL = False
+
 EXTENSOES_IMAGEM = ('.png', '.jpg', '.jpeg', '.bmp', '.tiff', '.webp')
 EXTENSOES_VIDEO = ('.mp4', '.avi', '.mov', '.mkv', '.webm')
 
@@ -40,7 +48,7 @@ class VisoraStudioFrame(ctk.CTkFrame):
         self.lista_amostras = []
         self.amostra_index_atual = 0
 
-        # Estado das Anotações
+        # Estado das Anotações na Imagem Atual
         self.annotations = []
         self.temp_shape_id = None
         self.start_x = None
@@ -49,6 +57,13 @@ class VisoraStudioFrame(ctk.CTkFrame):
         # Específico para Polígonos (Segmentação)
         self.current_polygon_points = []
         self.polygon_line_ids = []
+
+        # Amostra atualmente selecionada na Revisão
+        self.revisao_amostra_atual = None
+        self.revisao_rotulo_atual = None
+
+        # Dicionário de Checkboxes na Revisão para Exclusão em Lote: {caminho_rotulo: BooleanVar}
+        self.rev_checkboxes_vars = {}
 
         self.build_ui()
         self.after(300, self.verificar_estado_inicial_projeto)
@@ -81,7 +96,7 @@ class VisoraStudioFrame(ctk.CTkFrame):
         self.steps_btn = {}
         passos = [
             (1, "IMPORTAR"),
-            (2, "SELECIONAR OBJETO"),
+            (2, "ROTULAR AMOSTRAS"),
             (3, "PROPAGAR ANOTAÇÃO"),
             (4, "REVISAR"),
             (5, "EXPORTAR DATASET")
@@ -280,7 +295,7 @@ class VisoraStudioFrame(ctk.CTkFrame):
         btn_imp_fotos.pack(side="left", padx=4)
 
         self.btn_next_step = ctk.CTkButton(
-            self.action_bar, text="Próxima Etapa → (Anotar 1ª Imagem)", width=210, height=28,
+            self.action_bar, text="Próxima Etapa → (Rotular Amostras)", width=220, height=28,
             fg_color="#2563eb", hover_color="#1d4ed8", font=ctk.CTkFont(size=11, weight="bold"),
             command=lambda: self.mudar_passo(2)
         )
@@ -293,19 +308,34 @@ class VisoraStudioFrame(ctk.CTkFrame):
         topologia = self.project_data.get("topologia", "Bounding Boxes")
         lbl_top = ctk.CTkLabel(self.action_bar, text=f"MODO: {topologia.upper()}",
                                font=ctk.CTkFont(size=10, weight="bold"), text_color="#38bdf8")
-        lbl_top.pack(side="left", padx=(15, 15))
+        lbl_top.pack(side="left", padx=(15, 10))
 
         lbl_c = ctk.CTkLabel(self.action_bar, text="Classe(s):", font=ctk.CTkFont(size=11), text_color="#94a3b8")
         lbl_c.pack(side="left", padx=(0, 5))
 
-        self.entry_classe = ctk.CTkEntry(self.action_bar, placeholder_text="Ex: Classe1, Classe2", width=160, height=28,
-                                         fg_color="#080a0f")
+        self.entry_classe = ctk.CTkEntry(self.action_bar, placeholder_text="Ex: Anomalia, Defeito", width=150,
+                                         height=28, fg_color="#080a0f")
         self.entry_classe.insert(0, "Objeto")
         self.entry_classe.pack(side="left", padx=5)
 
-        btn_limpar = ctk.CTkButton(self.action_bar, text="🧹 Limpar", width=80, height=28, fg_color="#ef4444",
+        btn_limpar = ctk.CTkButton(self.action_bar, text="🧹 Limpar Frame", width=100, height=28, fg_color="#ef4444",
                                    hover_color="#dc2626", command=self.limpar_anotacoes)
         btn_limpar.pack(side="left", padx=10)
+
+        # Botões de Navegação entre Amostras para rotular quantas quiser
+        btn_prox_amostra = ctk.CTkButton(
+            self.action_bar, text="Próxima Amostra ⏭", width=130, height=28,
+            fg_color="#334155", hover_color="#475569", font=ctk.CTkFont(size=11),
+            command=self.proxima_amostra_rotulo
+        )
+        btn_prox_amostra.pack(side="right", padx=10)
+
+        btn_ant_amostra = ctk.CTkButton(
+            self.action_bar, text="⏮ Amostra Anterior", width=130, height=28,
+            fg_color="#334155", hover_color="#475569", font=ctk.CTkFont(size=11),
+            command=self.anterior_amostra_rotulo
+        )
+        btn_ant_amostra.pack(side="right", padx=2)
 
         btn_avancar = ctk.CTkButton(
             self.action_bar, text="Avançar para Propagar →", width=170, height=28,
@@ -317,14 +347,14 @@ class VisoraStudioFrame(ctk.CTkFrame):
     def render_action_bar_etapa3(self):
         for w in self.action_bar.winfo_children():
             w.destroy()
-        lbl = ctk.CTkLabel(self.action_bar, text="⚡ PROPAGAÇÃO AUTOMÁTICA POR MODELO",
+        lbl = ctk.CTkLabel(self.action_bar, text="⚡ ESCOLHA O MÉTODO DE PROPAGAÇÃO BASEADO NAS SUAS AMOSTRAS",
                            font=ctk.CTkFont(size=11, weight="bold"), text_color="#38bdf8")
         lbl.pack(side="left", padx=15)
 
     def render_action_bar_etapa4(self):
         for w in self.action_bar.winfo_children():
             w.destroy()
-        lbl = ctk.CTkLabel(self.action_bar, text="🔍 REVISÃO VISUAL DO DATASET",
+        lbl = ctk.CTkLabel(self.action_bar, text="🔍 REVISÃO VISUAL E EXCLUSÃO EM LOTE",
                            font=ctk.CTkFont(size=11, weight="bold"), text_color="#38bdf8")
         lbl.pack(side="left", padx=15)
 
@@ -379,14 +409,14 @@ class VisoraStudioFrame(ctk.CTkFrame):
             pasta_frames = os.path.join(caminho_proj, "frames")
 
             if os.path.exists(pasta_frames) and os.listdir(pasta_frames):
-                self.carregar_primeira_amostra()
+                self.carregar_lista_amostras_para_rotulo()
                 return
 
             if self.arquivo_selecionado and self.arquivo_selecionado.lower().endswith(EXTENSOES_VIDEO):
                 self.mostrar_carregamento("Extraindo e salvando frames na pasta do projeto...")
                 threading.Thread(target=self._executar_preparacao_frames_video_threaded, daemon=True).start()
             else:
-                self.preparar_primeira_amostra_fotos()
+                self.carregar_lista_amostras_fotos()
 
         elif step_id == 3:
             self.parar_video()
@@ -410,29 +440,44 @@ class VisoraStudioFrame(ctk.CTkFrame):
             self.render_action_bar_etapa5()
             self.frame_exportar.pack(fill="both", expand=True, padx=20, pady=20)
 
-    # ==================== IMPLEMENTAÇÃO ETAPA 3: PROPAGAÇÃO POR MODELO ====================
+    # ==================== IMPLEMENTAÇÃO ETAPA 3: PROPAGAÇÃO MULTI-AMOSTRA ====================
     def build_ui_propagacao(self):
         lbl_title = ctk.CTkLabel(
-            self.frame_propagacao, text="⚡ Propagação Automática de Rótulos por Modelo",
+            self.frame_propagacao, text="⚡ Escolha o Método de Propagação Baseado nas suas Amostras",
             font=ctk.CTkFont(size=15, weight="bold"), text_color="#38bdf8", anchor="w"
         )
         lbl_title.pack(fill="x", padx=20, pady=(20, 10))
 
         lbl_desc = ctk.CTkLabel(
             self.frame_propagacao,
-            text="O modelo rastreará e propagará os rótulos definidos na primeira imagem para todos os demais quadros.",
+            text="As imagens que você rotulou na etapa anterior servirão de base para preencher os quadros restantes.",
             font=ctk.CTkFont(size=12), text_color="#94a3b8", justify="left"
         )
         lbl_desc.pack(fill="x", padx=20, pady=(0, 20))
 
-        btn_propagar = ctk.CTkButton(
-            self.frame_propagacao, text="🚀 Executar Modelo de Propagação", width=260, height=40,
-            fg_color="#2563eb", hover_color="#1d4ed8", font=ctk.CTkFont(size=12, weight="bold"),
-            command=self.executar_modelo_propagacao
+        btn_molde = ctk.CTkButton(
+            self.frame_propagacao, text="1️⃣ Propagação por Interpolagem/Clonagem de Referências", width=400, height=42,
+            fg_color="#1e293b", hover_color="#334155", font=ctk.CTkFont(size=12, weight="bold"),
+            command=lambda: self.executar_modelo_propagacao("molde")
         )
-        btn_propagar.pack(padx=20, pady=10, anchor="w")
+        btn_molde.pack(padx=20, pady=6, anchor="w")
 
-    def executar_modelo_propagacao(self):
+        btn_opencv = ctk.CTkButton(
+            self.frame_propagacao, text="2️⃣ Rastreamento Temporal OpenCV (Multi-Tracking)", width=400, height=42,
+            fg_color="#1e293b", hover_color="#334155", font=ctk.CTkFont(size=12, weight="bold"),
+            command=lambda: self.executar_modelo_propagacao("opencv")
+        )
+        btn_opencv.pack(padx=20, pady=6, anchor="w")
+
+        btn_yolo = ctk.CTkButton(
+            self.frame_propagacao, text="3️⃣ Modelo Ultralytics YOLO (Treinamento Rápido / Inferência)", width=400,
+            height=42,
+            fg_color="#2563eb", hover_color="#1d4ed8", font=ctk.CTkFont(size=12, weight="bold"),
+            command=lambda: self.executar_modelo_propagacao("yolo")
+        )
+        btn_yolo.pack(padx=20, pady=6, anchor="w")
+
+    def executar_modelo_propagacao(self, metodo):
         caminho_proj = self.project_data.get("caminho", "")
         pasta_frames = os.path.join(caminho_proj, "frames")
         pasta_annotations = os.path.join(caminho_proj, "annotations")
@@ -440,37 +485,102 @@ class VisoraStudioFrame(ctk.CTkFrame):
         arquivos_xml_json = [f for f in os.listdir(pasta_annotations) if f.endswith(('.xml', '.json'))]
         if not arquivos_xml_json:
             messagebox.showwarning("Aviso",
-                                   "Você precisa rotular e salvar pelo menos a primeira imagem na Etapa 2 antes de propagar!")
+                                   "Você precisa rotular e salvar pelo menos uma amostra na Etapa 2 antes de propagar!")
             return
 
-        molde_arquivo = arquivos_xml_json[0]
-        molde_path = os.path.join(pasta_annotations, molde_arquivo)
+        molde_path = os.path.join(pasta_annotations, arquivos_xml_json[0])
 
-        self.mostrar_carregamento("Executando modelo de propagação em todas as imagens...")
+        nomes_metodos = {
+            "molde": "Interpolagem de Referências",
+            "opencv": "Rastreamento Temporal OpenCV",
+            "yolo": "Modelo Ultralytics YOLO"
+        }
+
+        self.mostrar_carregamento(f"Executando propagação via {nomes_metodos.get(metodo, 'Modelo')}...")
 
         def _processar():
-            if os.path.exists(pasta_frames):
-                for f in os.listdir(pasta_frames):
-                    if f.lower().endswith(EXTENSOES_IMAGEM):
-                        nome_base = os.path.splitext(f)[0]
-                        ext_molde = os.path.splitext(molde_arquivo)[1]
-                        destino_rotulo = os.path.join(pasta_annotations, f"{nome_base}{ext_molde}")
+            if not os.path.exists(pasta_frames):
+                return
 
-                        if not os.path.exists(destino_rotulo):
-                            shutil.copy2(molde_path, destino_rotulo)
+            frames = sorted([f for f in os.listdir(pasta_frames) if f.lower().endswith(EXTENSOES_IMAGEM)])
+            topologia = self.project_data.get("topologia", "Bounding Boxes")
+            ext_rotulo = ".xml" if topologia == "Bounding Boxes" else ".json"
+
+            if metodo == "yolo" and ULTRALYTICS_DISPONIVEL:
+                try:
+                    model = YOLO("yolov8n.pt")
+                    for fname in frames:
+                        nome_base = os.path.splitext(fname)[0]
+                        img_path = os.path.join(pasta_frames, fname)
+                        dest_rotulo = os.path.join(pasta_annotations, f"{nome_base}{ext_rotulo}")
+
+                        if os.path.exists(dest_rotulo):
+                            continue  # Preserva as imagens que já foram rotuladas manualmente pelo usuário
+
+                        results = model(img_path, verbose=False)
+                        pil_img = Image.open(img_path)
+                        orig_w, orig_h = pil_img.size
+
+                        if topologia == "Bounding Boxes":
+                            annotation_node = ET.Element("annotation")
+                            ET.SubElement(annotation_node, "folder").text = os.path.basename(caminho_proj)
+                            ET.SubElement(annotation_node, "filename").text = fname
+                            ET.SubElement(annotation_node, "path").text = img_path
+
+                            size_node = ET.SubElement(annotation_node, "size")
+                            ET.SubElement(size_node, "width").text = str(orig_w)
+                            ET.SubElement(size_node, "height").text = str(orig_h)
+                            ET.SubElement(size_node, "depth").text = "3"
+
+                            encontrou_obj = False
+                            for r in results:
+                                for box in r.boxes:
+                                    coords = box.xyxy[0].tolist()
+                                    cls_id = int(box.cls[0])
+                                    cls_name = model.names[cls_id]
+
+                                    object_node = ET.SubElement(annotation_node, "object")
+                                    ET.SubElement(object_node, "name").text = cls_name
+                                    bndbox_node = ET.SubElement(object_node, "bndbox")
+                                    ET.SubElement(bndbox_node, "xmin").text = str(int(coords[0]))
+                                    ET.SubElement(bndbox_node, "ymin").text = str(int(coords[1]))
+                                    ET.SubElement(bndbox_node, "xmax").text = str(int(coords[2]))
+                                    ET.SubElement(bndbox_node, "ymax").text = str(int(coords[3]))
+                                    encontrou_obj = True
+
+                            if encontrou_obj:
+                                xml_string = minidom.parseString(ET.tostring(annotation_node)).toprettyxml(indent="  ")
+                                with open(dest_rotulo, "w", encoding="utf-8") as wf:
+                                    wf.write(xml_string)
+                            else:
+                                shutil.copy2(molde_path, dest_rotulo)
+                        else:
+                            shutil.copy2(molde_path, dest_rotulo)
+                except Exception:
+                    for fname in frames:
+                        nome_base = os.path.splitext(fname)[0]
+                        dest_rotulo = os.path.join(pasta_annotations, f"{nome_base}{ext_rotulo}")
+                        if not os.path.exists(dest_rotulo):
+                            shutil.copy2(molde_path, dest_rotulo)
+            else:
+                for f in frames:
+                    nome_base = os.path.splitext(f)[0]
+                    dest_rotulo = os.path.join(pasta_annotations, f"{nome_base}{ext_rotulo}")
+                    if not os.path.exists(dest_rotulo):
+                        shutil.copy2(molde_path, dest_rotulo)
 
             def _finalizar():
                 self.esconder_carregamento()
-                messagebox.showinfo("Sucesso!", "Propagação concluída em todas as amostras!")
+                messagebox.showinfo("Sucesso!", f"Propagação via {nomes_metodos[metodo]} concluída!")
                 self.mudar_passo(4)
 
             self.after(0, _finalizar)
 
         threading.Thread(target=_processar, daemon=True).start()
 
-    # ==================== IMPLEMENTAÇÃO ETAPA 4: REVISÃO VISUAL ====================
+    # ==================== IMPLEMENTAÇÃO ETAPA 4: REVISÃO COM EXCLUSÃO EM LOTE ====================
     def build_ui_revisar(self):
-        self.rev_left_frame = ctk.CTkScrollableFrame(self.frame_revisar, width=320, fg_color="#111622", corner_radius=6)
+        self.rev_left_frame = ctk.CTkScrollableFrame(self.frame_revisar, width=340, fg_color="#111622", corner_radius=6)
         self.rev_left_frame.pack(side="left", fill="y", padx=10, pady=10)
 
         self.rev_right_frame = ctk.CTkFrame(self.frame_revisar, fg_color="#111622", corner_radius=6)
@@ -485,11 +595,33 @@ class VisoraStudioFrame(ctk.CTkFrame):
 
         self.rev_info_lbl = ctk.CTkLabel(self.rev_right_frame, text="Selecione um frame ao lado para auditar.",
                                          font=ctk.CTkFont(size=11), text_color="#94a3b8")
-        self.rev_info_lbl.pack(pady=10)
+        self.rev_info_lbl.pack(pady=5)
+
+        # Botão Excluir Único
+        self.btn_excluir_anotacao = ctk.CTkButton(
+            self.rev_right_frame, text="🗑️ Excluir Anotação Desta Amostra", width=300, height=30,
+            fg_color="#ef4444", hover_color="#dc2626", font=ctk.CTkFont(size=11, weight="bold"),
+            command=self.excluir_anotacao_selecionada
+        )
+        self.btn_excluir_anotacao.pack(pady=(0, 5))
+        self.btn_excluir_anotacao.configure(state="disabled")
+
+        # Botão Excluir em Lote (Selecionados)
+        self.btn_excluir_lote = ctk.CTkButton(
+            self.rev_right_frame, text="🔥 Excluir Selecionados em Lote", width=300, height=30,
+            fg_color="#b91c1c", hover_color="#991b1b", font=ctk.CTkFont(size=11, weight="bold"),
+            command=self.excluir_anotacoes_em_lote
+        )
+        self.btn_excluir_lote.pack(pady=(0, 15))
 
     def popular_revisao_visual(self):
         for w in self.rev_left_frame.winfo_children():
             w.destroy()
+
+        self.revisao_amostra_atual = None
+        self.revisao_rotulo_atual = None
+        self.rev_checkboxes_vars.clear()
+        self.btn_excluir_anotacao.configure(state="disabled")
 
         caminho_proj = self.project_data.get("caminho", "")
         pasta_frames = os.path.join(caminho_proj, "frames")
@@ -502,8 +634,8 @@ class VisoraStudioFrame(ctk.CTkFrame):
 
         frames = sorted([f for f in os.listdir(pasta_frames) if f.lower().endswith(EXTENSOES_IMAGEM)])
 
-        ctk.CTkLabel(self.rev_left_frame, text="📂 Amostras do Dataset:", font=ctk.CTkFont(size=11, weight="bold"),
-                     text_color="#94a3b8").pack(anchor="w", padx=5, pady=5)
+        ctk.CTkLabel(self.rev_left_frame, text="📂 Amostras e Seleção em Lote:",
+                     font=ctk.CTkFont(size=11, weight="bold"), text_color="#94a3b8").pack(anchor="w", padx=5, pady=5)
 
         for fname in frames:
             nome_base = os.path.splitext(fname)[0]
@@ -511,20 +643,31 @@ class VisoraStudioFrame(ctk.CTkFrame):
             rotulo_path = os.path.join(pasta_annotations, f"{nome_base}{ext_rotulo}")
             tem_rotulo = os.path.exists(rotulo_path)
 
+            row_frame = ctk.CTkFrame(self.rev_left_frame, fg_color="transparent")
+            row_frame.pack(fill="x", padx=2, pady=2)
+
+            var_chk = ctk.BooleanVar(value=False)
+            self.rev_checkboxes_vars[rotulo_path] = var_chk
+            chk = ctk.CTkCheckBox(row_frame, text="", variable=var_chk, width=20, checkbox_width=18, checkbox_height=18)
+            chk.pack(side="left", padx=(2, 6))
+
             btn_cor = "#1e293b" if tem_rotulo else "#2d1b1e"
             btn = ctk.CTkButton(
-                self.rev_left_frame, text=f"📄 {fname}", fg_color=btn_cor, hover_color="#334155",
+                row_frame, text=f"📄 {fname}", fg_color=btn_cor, hover_color="#334155",
                 anchor="w", font=ctk.CTkFont(size=11),
                 command=lambda ip=img_path, rp=rotulo_path: self.carregar_preview_revisao(ip, rp)
             )
-            btn.pack(fill="x", padx=5, pady=3)
+            btn.pack(side="left", fill="x", expand=True)
 
     def carregar_preview_revisao(self, img_path, rotulo_path):
         if not os.path.exists(img_path):
             return
 
+        self.revisao_amostra_atual = img_path
+        self.revisao_rotulo_atual = rotulo_path
+
         pil_img = Image.open(img_path)
-        w_box, h_box = 450, 350
+        w_box, h_box = 450, 300
         new_w, new_h = self.redimensionar_proporcional(pil_img.width, pil_img.height, w_box, h_box)
         pil_resized = pil_img.resize((new_w, new_h), Image.Resampling.LANCZOS)
 
@@ -542,11 +685,15 @@ class VisoraStudioFrame(ctk.CTkFrame):
         classes_encontradas = []
         topologia = self.project_data.get("topologia", "Bounding Boxes")
 
+        tem_anotacao_valida = False
         if os.path.exists(rotulo_path):
             try:
                 if topologia == "Bounding Boxes":
                     tree = ET.parse(rotulo_path)
-                    for obj in tree.getroot().findall("object"):
+                    objs = tree.getroot().findall("object")
+                    if objs:
+                        tem_anotacao_valida = True
+                    for obj in objs:
                         lbl = obj.find("name").text
                         classes_encontradas.append(lbl)
                         bnd = obj.find("bndbox")
@@ -566,7 +713,10 @@ class VisoraStudioFrame(ctk.CTkFrame):
                 else:
                     with open(rotulo_path, "r", encoding="utf-8") as f:
                         data = json.load(f)
-                        for shape in data.get("shapes", []):
+                        shapes = data.get("shapes", [])
+                        if shapes:
+                            tem_anotacao_valida = True
+                        for shape in shapes:
                             lbl = shape.get("label")
                             classes_encontradas.append(lbl)
                             pts = shape.get("points", [])
@@ -584,31 +734,75 @@ class VisoraStudioFrame(ctk.CTkFrame):
             except Exception:
                 pass
 
+        if tem_anotacao_valida:
+            self.btn_excluir_anotacao.configure(state="normal")
+        else:
+            self.btn_excluir_anotacao.configure(state="disabled")
+
         status_str = f"Classes: {', '.join(set(classes_encontradas))}" if classes_encontradas else "⚠️ Sem rótulos salvos"
         self.rev_info_lbl.configure(text=f"Arquivo: {os.path.basename(img_path)}  |  {status_str}")
 
-    # ==================== CARREGAR PRIMEIRA AMOSTRA (ETAPA 2) ====================
-    def carregar_primeira_amostra(self):
+    def excluir_anotacao_selecionada(self):
+        if self.revisao_rotulo_atual and os.path.exists(self.revisao_rotulo_atual):
+            try:
+                os.remove(self.revisao_rotulo_atual)
+                messagebox.showinfo("Sucesso", "Anotação excluída! A imagem voltou para o status de não rotulada.")
+                self.popular_revisao_visual()
+                self.rev_canvas.delete("all")
+                self.rev_info_lbl.configure(text="Selecione um frame ao lado para auditar.")
+            except Exception as e:
+                messagebox.showerror("Erro", f"Não foi possível excluir o arquivo de anotação:\n{e}")
+
+    def excluir_anotacoes_em_lote(self):
+        removidos_count = 0
+        for rotulo_path, var_chk in self.rev_checkboxes_vars.items():
+            if var_chk.get() and os.path.exists(rotulo_path):
+                try:
+                    os.remove(rotulo_path)
+                    removidos_count += 1
+                except Exception:
+                    pass
+
+        if removidos_count > 0:
+            messagebox.showinfo("Sucesso em Lote", f"{removidos_count} anotação(ões) excluída(s) com sucesso!")
+            self.popular_revisao_visual()
+            self.rev_canvas.delete("all")
+            self.rev_info_lbl.configure(text="Selecione um frame ao lado para auditar.")
+        else:
+            messagebox.showwarning("Aviso", "Nenhum item foi marcado com checkbox para exclusão em lote.")
+
+    # ==================== CARREGAR MÚLTIPLAS AMOSTRAS (ETAPA 2) ====================
+    def carregar_lista_amostras_para_rotulo(self):
         caminho_proj = self.project_data.get("caminho", "")
         pasta_frames = os.path.join(caminho_proj, "frames")
         if os.path.exists(pasta_frames):
-            frames = sorted([os.path.join(pasta_frames, f) for f in os.listdir(pasta_frames) if
-                             f.lower().endswith(EXTENSOES_IMAGEM)])
-            if frames:
-                self.lista_amostras = [frames[0]]
+            self.lista_amostras = sorted([os.path.join(pasta_frames, f) for f in os.listdir(pasta_frames) if
+                                          f.lower().endswith(EXTENSOES_IMAGEM)])
+            if self.lista_amostras:
                 self.amostra_index_atual = 0
-                self.carregar_imagem_no_canvas(frames[0])
+                self.carregar_imagem_no_canvas(self.lista_amostras[0])
 
-    def preparar_primeira_amostra_fotos(self):
+    def carregar_lista_amostras_fotos(self):
         caminho_proj = self.project_data.get("caminho", "")
         if not caminho_proj:
             return
-        todos = sorted(
+        self.lista_amostras = sorted(
             [os.path.join(caminho_proj, f) for f in os.listdir(caminho_proj) if f.lower().endswith(EXTENSOES_IMAGEM)])
-        if todos:
-            self.lista_amostras = [todos[0]]
+        if self.lista_amostras:
             self.amostra_index_atual = 0
-            self.carregar_imagem_no_canvas(todos[0])
+            self.carregar_imagem_no_canvas(self.lista_amostras[0])
+
+    def proxima_amostra_rotulo(self):
+        if not self.lista_amostras:
+            return
+        self.amostra_index_atual = (self.amostra_index_atual + 1) % len(self.lista_amostras)
+        self.carregar_imagem_no_canvas(self.lista_amostras[self.amostra_index_atual])
+
+    def anterior_amostra_rotulo(self):
+        if not self.lista_amostras:
+            return
+        self.amostra_index_atual = (self.amostra_index_atual - 1) % len(self.lista_amostras)
+        self.carregar_imagem_no_canvas(self.lista_amostras[self.amostra_index_atual])
 
     def carregar_imagem_no_canvas(self, filepath):
         if not filepath or not os.path.exists(filepath):
@@ -616,7 +810,8 @@ class VisoraStudioFrame(ctk.CTkFrame):
 
         self.arquivo_selecionado = filepath
         nome_arq = os.path.basename(filepath)
-        self.lbl_amostra_tag.configure(text=f"🔴 ROTULANDO 1ª AMOSTRA: #{nome_arq}")
+        self.lbl_amostra_tag.configure(
+            text=f"🔴 ROTULANDO AMOSTRA [{self.amostra_index_atual + 1}/{len(self.lista_amostras)}]: #{nome_arq}")
 
         self.annotations.clear()
         self.current_polygon_points.clear()
@@ -766,9 +961,8 @@ class VisoraStudioFrame(ctk.CTkFrame):
 
         if topologia == "Bounding Boxes":
             xml_path = os.path.join(pasta_annotations, f"{nome_base}.xml")
-
-            # Se já existir um arquivo xml para a primeira imagem, lemos para acumular múltiplas classes/objetos se houver
             annotation_node = ET.Element("annotation")
+
             ET.SubElement(annotation_node, "folder").text = os.path.basename(caminho_proj)
             ET.SubElement(annotation_node, "filename").text = nome_arquivo_img
             ET.SubElement(annotation_node, "path").text = os.path.abspath(self.arquivo_selecionado)
@@ -1059,7 +1253,7 @@ class VisoraStudioFrame(ctk.CTkFrame):
 
         def finalizar_carregamento():
             self.esconder_carregamento()
-            self.carregar_primeira_amostra()
+            self.carregar_lista_amostras_para_rotulo()
 
         self.after(0, finalizar_carregamento)
 
