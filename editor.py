@@ -203,7 +203,7 @@ class VisoraStudioFrame(ctk.CTkFrame):
         self.canvas_anotacao = ctk.CTkCanvas(self.display_container, bg="#05070a", highlightthickness=0)
         self.vincular_eventos_canvas()
 
-        # PAINEL DE PROPAGAÇÃO (Etapa 3 - Scrollable para caber as explicações detalhadas)
+        # PAINEL DE PROPAGAÇÃO (Etapa 3)
         self.frame_propagacao = ctk.CTkScrollableFrame(self.display_container, fg_color="#0b0e14", corner_radius=8)
         self.build_ui_propagacao()
 
@@ -353,7 +353,7 @@ class VisoraStudioFrame(ctk.CTkFrame):
     def render_action_bar_etapa4(self):
         for w in self.action_bar.winfo_children():
             w.destroy()
-        lbl = ctk.CTkLabel(self.action_bar, text="🔍 REVISÃO VISUAL E EXCLUSÃO EM LOTE / TODAS",
+        lbl = ctk.CTkLabel(self.action_bar, text="🔍 REVISÃO VISUAL E REMOÇÃO",
                            font=ctk.CTkFont(size=11, weight="bold"), text_color="#38bdf8")
         lbl.pack(side="left", padx=15)
 
@@ -618,7 +618,7 @@ class VisoraStudioFrame(ctk.CTkFrame):
 
         threading.Thread(target=_processar, daemon=True).start()
 
-    # ==================== IMPLEMENTAÇÃO ETAPA 4: REVISÃO, EXCLUSÃO LOTE E TODAS ====================
+    # ==================== IMPLEMENTAÇÃO ETAPA 4: REVISÃO COM SELECIONAR TODOS E REMOVER SELECIONADOS ====================
     def build_ui_revisar(self):
         self.rev_left_frame = ctk.CTkScrollableFrame(self.frame_revisar, width=340, fg_color="#111622", corner_radius=6)
         self.rev_left_frame.pack(side="left", fill="y", padx=10, pady=10)
@@ -637,30 +637,13 @@ class VisoraStudioFrame(ctk.CTkFrame):
                                          font=ctk.CTkFont(size=11), text_color="#94a3b8")
         self.rev_info_lbl.pack(pady=5)
 
-        # Botão Excluir Único
-        self.btn_excluir_anotacao = ctk.CTkButton(
-            self.rev_right_frame, text="🗑️ Excluir Anotação Desta Amostra", width=300, height=30,
-            fg_color="#ef4444", hover_color="#dc2626", font=ctk.CTkFont(size=11, weight="bold"),
-            command=self.excluir_anotacao_selecionada
-        )
-        self.btn_excluir_anotacao.pack(pady=(0, 5))
-        self.btn_excluir_anotacao.configure(state="disabled")
-
-        # Botão Excluir em Lote (Selecionados)
+        # Botão Único: Remover o(s) selecionado(s)
         self.btn_excluir_lote = ctk.CTkButton(
-            self.rev_right_frame, text="🔥 Excluir Selecionados em Lote", width=300, height=30,
-            fg_color="#b91c1c", hover_color="#991b1b", font=ctk.CTkFont(size=11, weight="bold"),
+            self.rev_right_frame, text="🗑️ Remover o(s) selecionado(s)", width=300, height=35,
+            fg_color="#ef4444", hover_color="#dc2626", font=ctk.CTkFont(size=12, weight="bold"),
             command=self.excluir_anotacoes_em_lote
         )
-        self.btn_excluir_lote.pack(pady=(0, 5))
-
-        # Botão Excluir Todas
-        self.btn_excluir_todas = ctk.CTkButton(
-            self.rev_right_frame, text="💥 Excluir Todas as Anotações", width=300, height=30,
-            fg_color="#7f1d1d", hover_color="#651c1c", font=ctk.CTkFont(size=11, weight="bold"),
-            command=self.excluir_todas_as_anotacoes
-        )
-        self.btn_excluir_todas.pack(pady=(0, 15))
+        self.btn_excluir_lote.pack(pady=(5, 15))
 
     def popular_revisao_visual(self):
         for w in self.rev_left_frame.winfo_children():
@@ -669,7 +652,6 @@ class VisoraStudioFrame(ctk.CTkFrame):
         self.revisao_amostra_atual = None
         self.revisao_rotulo_atual = None
         self.rev_checkboxes_vars.clear()
-        self.btn_excluir_anotacao.configure(state="disabled")
 
         caminho_proj = self.project_data.get("caminho", "")
         pasta_frames = os.path.join(caminho_proj, "frames")
@@ -682,8 +664,17 @@ class VisoraStudioFrame(ctk.CTkFrame):
 
         frames = sorted([f for f in os.listdir(pasta_frames) if f.lower().endswith(EXTENSOES_IMAGEM)])
 
-        ctk.CTkLabel(self.rev_left_frame, text="📂 Amostras e Seleção em Lote:",
-                     font=ctk.CTkFont(size=11, weight="bold"), text_color="#94a3b8").pack(anchor="w", padx=5, pady=5)
+        # Cabeçalho com a caixa de seleção "Selecionar todos"
+        header_chk_frame = ctk.CTkFrame(self.rev_left_frame, fg_color="transparent")
+        header_chk_frame.pack(fill="x", padx=2, pady=5)
+
+        self.var_select_all = ctk.BooleanVar(value=False)
+        chk_all = ctk.CTkCheckBox(
+            header_chk_frame, text="Selecionar todos", variable=self.var_select_all,
+            font=ctk.CTkFont(size=11, weight="bold"), text_color="#38bdf8",
+            checkbox_width=18, checkbox_height=18, command=self.toggle_select_all
+        )
+        chk_all.pack(side="left", padx=2)
 
         for fname in frames:
             nome_base = os.path.splitext(fname)[0]
@@ -706,6 +697,11 @@ class VisoraStudioFrame(ctk.CTkFrame):
                 command=lambda ip=img_path, rp=rotulo_path: self.carregar_preview_revisao(ip, rp)
             )
             btn.pack(side="left", fill="x", expand=True)
+
+    def toggle_select_all(self):
+        estado_desejado = self.var_select_all.get()
+        for var in self.rev_checkboxes_vars.values():
+            var.set(estado_desejado)
 
     def carregar_preview_revisao(self, img_path, rotulo_path):
         if not os.path.exists(img_path):
@@ -733,14 +729,11 @@ class VisoraStudioFrame(ctk.CTkFrame):
         classes_encontradas = []
         topologia = self.project_data.get("topologia", "Bounding Boxes")
 
-        tem_anotacao_valida = False
         if os.path.exists(rotulo_path):
             try:
                 if topologia == "Bounding Boxes":
                     tree = ET.parse(rotulo_path)
                     objs = tree.getroot().findall("object")
-                    if objs:
-                        tem_anotacao_valida = True
                     for obj in objs:
                         lbl = obj.find("name").text
                         classes_encontradas.append(lbl)
@@ -762,8 +755,6 @@ class VisoraStudioFrame(ctk.CTkFrame):
                     with open(rotulo_path, "r", encoding="utf-8") as f:
                         data = json.load(f)
                         shapes = data.get("shapes", [])
-                        if shapes:
-                            tem_anotacao_valida = True
                         for shape in shapes:
                             lbl = shape.get("label")
                             classes_encontradas.append(lbl)
@@ -782,24 +773,8 @@ class VisoraStudioFrame(ctk.CTkFrame):
             except Exception:
                 pass
 
-        if tem_anotacao_valida:
-            self.btn_excluir_anotacao.configure(state="normal")
-        else:
-            self.btn_excluir_anotacao.configure(state="disabled")
-
         status_str = f"Classes: {', '.join(set(classes_encontradas))}" if classes_encontradas else "⚠️ Sem rótulos salvos"
         self.rev_info_lbl.configure(text=f"Arquivo: {os.path.basename(img_path)}  |  {status_str}")
-
-    def excluir_anotacao_selecionada(self):
-        if self.revisao_rotulo_atual and os.path.exists(self.revisao_rotulo_atual):
-            try:
-                os.remove(self.revisao_rotulo_atual)
-                messagebox.showinfo("Sucesso", "Anotação excluída! A imagem voltou para o status de não rotulada.")
-                self.popular_revisao_visual()
-                self.rev_canvas.delete("all")
-                self.rev_info_lbl.configure(text="Selecione um frame ao lado para auditar.")
-            except Exception as e:
-                messagebox.showerror("Erro", f"Não foi possível excluir o arquivo de anotação:\n{e}")
 
     def excluir_anotacoes_em_lote(self):
         removidos_count = 0
@@ -812,39 +787,12 @@ class VisoraStudioFrame(ctk.CTkFrame):
                     pass
 
         if removidos_count > 0:
-            messagebox.showinfo("Sucesso em Lote", f"{removidos_count} anotação(ões) excluída(s) com sucesso!")
+            messagebox.showinfo("Sucesso", f"{removidos_count} anotação(ões) removida(s) com sucesso!")
             self.popular_revisao_visual()
             self.rev_canvas.delete("all")
             self.rev_info_lbl.configure(text="Selecione um frame ao lado para auditar.")
         else:
-            messagebox.showwarning("Aviso", "Nenhum item foi marcado com checkbox para exclusão em lote.")
-
-    def excluir_todas_as_anotacoes(self):
-        caminho_proj = self.project_data.get("caminho", "")
-        pasta_annotations = os.path.join(caminho_proj, "annotations")
-
-        if not os.path.exists(pasta_annotations):
-            messagebox.showwarning("Aviso", "Nenhuma pasta de anotações encontrada.")
-            return
-
-        if not messagebox.askyesno("Confirmação",
-                                   "Tem certeza absoluta que deseja excluir TODAS as anotações do projeto?"):
-            return
-
-        removidos_count = 0
-        for f in os.listdir(pasta_annotations):
-            if f.endswith(('.xml', '.json')):
-                p = os.path.join(pasta_annotations, f)
-                try:
-                    os.remove(p)
-                    removidos_count += 1
-                except Exception:
-                    pass
-
-        messagebox.showinfo("Sucesso", f"Todas as {removidos_count} anotações foram excluídas com sucesso!")
-        self.popular_revisao_visual()
-        self.rev_canvas.delete("all")
-        self.rev_info_lbl.configure(text="Selecione um frame ao lado para auditar.")
+            messagebox.showwarning("Aviso", "Nenhum item foi marcado com checkbox para remoção.")
 
     # ==================== CARREGAR MÚLTIPLAS AMOSTRAS (ETAPA 2) ====================
     def carregar_lista_amostras_para_rotulo(self):
