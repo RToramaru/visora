@@ -1,4 +1,5 @@
 import os
+import sys
 import tkinter as tk
 from tkinter import filedialog, messagebox
 import customtkinter as ctk
@@ -12,6 +13,11 @@ ctk.set_appearance_mode("Dark")
 ctk.set_default_color_theme("blue")
 
 ARQUIVO_RECENTES = "recentes.json"
+
+
+def caminho_recurso(caminho_relativo):
+    base_path = getattr(sys, "_MEIPASS", os.path.dirname(os.path.abspath(__file__)))
+    return os.path.join(base_path, caminho_relativo)
 
 
 class CardTipoProblema(ctk.CTkFrame):
@@ -62,6 +68,7 @@ class VisoraAppHome(ctk.CTk):
         self.geometry("1100x700")
         self.minsize(950, 600)
         self.configure(fg_color="#0b0e14")
+        self.iconbitmap(caminho_recurso(os.path.join("imagens", "icone.ico")))
 
         self.recent_projects_store = RecentProjectsStore(ARQUIVO_RECENTES)
         self.projetos_recentes = self.carregar_recentes()[:5]
@@ -391,3 +398,10 @@ class VisoraAppHome(ctk.CTk):
 if __name__ == "__main__":
     app = VisoraAppHome()
     app.mainloop()
+
+
+
+# Testes
+# .\.venv\Scripts\python.exe -m pytest -q
+
+# pyinstaller --noconfirm --clean --onefile --windowed --name="Visora" --icon="imagens\icone.ico" --add-data "imagens;imagens" --add-data "pesos\yolov8n.pt;." --collect-all customtkinter --collect-all torch --collect-all torchvision --collect-all mobile_sam --collect-all timm --collect-all ultralytics main.py
