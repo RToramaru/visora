@@ -24,7 +24,7 @@ try:
     )
     import torch
     import torch.nn.functional as F
-    from mobile_sam import build_sam_vit_t
+    from mobile_sam import SamAutomaticMaskGenerator, build_sam_vit_t
     from mobile_sam.utils.transforms import ResizeLongestSide
 
     MOBILE_SAM_DISPONIVEL = True
@@ -575,18 +575,28 @@ class VisoraStudioFrame(ctk.CTkFrame):
         ctk.CTkButton(controles, text="Selecionar", width=110, height=28,
                       command=self.selecionar_modelo_visualizacao).grid(row=0, column=2, padx=10, pady=10)
 
-        ctk.CTkLabel(controles, text="Imagem para testar:", text_color="#e2e8f0").grid(
+        ctk.CTkLabel(controles, text="Tipo de modelo:", text_color="#e2e8f0").grid(
             row=1, column=0, padx=15, pady=10, sticky="w"
         )
+        self.var_tipo_visualizacao = ctk.StringVar(
+            value="MobileSAM" if self.project_data.get("topologia", "Bounding Boxes") != "Bounding Boxes" else "YOLO"
+        )
+        ctk.CTkOptionMenu(
+            controles, variable=self.var_tipo_visualizacao, values=["YOLO", "MobileSAM"], width=150
+        ).grid(row=1, column=1, padx=10, pady=10, sticky="w")
+
+        ctk.CTkLabel(controles, text="Imagem para testar:", text_color="#e2e8f0").grid(
+            row=2, column=0, padx=15, pady=10, sticky="w"
+        )
         self.entry_imagem_visualizacao = ctk.CTkEntry(controles, height=28, fg_color="#080a0f")
-        self.entry_imagem_visualizacao.grid(row=1, column=1, padx=10, pady=10, sticky="ew")
+        self.entry_imagem_visualizacao.grid(row=2, column=1, padx=10, pady=10, sticky="ew")
         ctk.CTkButton(controles, text="Selecionar", width=110, height=28,
-                      command=self.selecionar_imagem_visualizacao).grid(row=1, column=2, padx=10, pady=10)
+                      command=self.selecionar_imagem_visualizacao).grid(row=2, column=2, padx=10, pady=10)
 
         ctk.CTkButton(
             controles, text="Executar inferência", width=180, height=34,
             fg_color="#22c55e", hover_color="#16a34a", command=self.executar_inferencia_modelo
-        ).grid(row=2, column=1, padx=10, pady=(5, 15), sticky="w")
+        ).grid(row=3, column=1, padx=10, pady=(5, 15), sticky="w")
 
         self.lbl_resultado_visualizacao = ctk.CTkLabel(
             self.frame_visualizar_modelo, text="Selecione um modelo e uma imagem para visualizar as detecções.",
@@ -670,17 +680,46 @@ class VisoraStudioFrame(ctk.CTkFrame):
             messagebox.showwarning("Aviso", "Selecione um modelo e uma imagem válidos.")
             return
 
-        self.mostrar_carregamento("Aplicando modelo na imagem...")
+        mensagem = "Aplicando MobileSAM na imagem..." if self.var_tipo_visualizacao.get() == "MobileSAM" \
+            else "Aplicando YOLO na imagem..."
+        self.mostrar_carregamento(mensagem)
         threading.Thread(
             target=self._executar_inferencia_modelo_threaded,
-            args=(caminho_modelo, caminho_imagem), daemon=True
+            args=(caminho_modelo, caminho_imagem, self.var_tipo_visualizacao.get()), daemon=True
         ).start()
 
-    def _executar_inferencia_modelo_threaded(self, caminho_modelo, caminho_imagem):
+    def _executar_inferencia_modelo_threaded(self, caminho_modelo, caminho_imagem, tipo_modelo):
         try:
-            modelo = YOLO(caminho_modelo)
-            resultado = modelo(caminho_imagem, verbose=False)[0]
-            imagem_rgb = cv2.cvtColor(resultado.plot(), cv2.COLOR_BGR2RGB)
+            if tipo_modelo == "MobileSAM":
+                imagem_rgb = cv2.cvtColor(cv2.imread(caminho_imagem), cv2.COLOR_BGR2RGB)
+                modelo = build_sam_vit_t(checkpoint=caminho_modelo)
+                modelo.to("cuda" if torch.cuda.is_available() else "cpu")
+                modelo.eval()
+                with torch.inference_mode():
+                    mascaras = SamAutomaticMaskGenerator(
+                        modelo,
+                        points_per_side=8,
+                        points_per_batch=8,
+                        crop_n_layers=0,
+                        min_mask_region_area=100
+                    ).generate(imagem_rgb)
+                resultado_rgb = imagem_rgb.copy()
+                for indice, mascara in enumerate(mascaras):
+                    cor = np.array((
+                        (37 * (indice + 3)) % 255,
+                        (97 * (indice + 5)) % 255,
+                        (173 * (indice + 7)) % 255
+                    ), dtype=np.uint8)
+                    area = mascara.get("segmentation")
+                    if area is not None:
+                        resultado_rgb[area] = (
+                            resultado_rgb[area].astype(np.float32) * 0.45 + cor * 0.55
+                        ).astype(np.uint8)
+                imagem_rgb = resultado_rgb
+            else:
+                modelo = YOLO(caminho_modelo)
+                resultado = modelo(caminho_imagem, verbose=False)[0]
+                imagem_rgb = cv2.cvtColor(resultado.plot(), cv2.COLOR_BGR2RGB)
             imagem = Image.fromarray(imagem_rgb)
             self.after(0, lambda: self._mostrar_resultado_inferencia(imagem))
         except Exception as erro:
