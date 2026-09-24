@@ -370,6 +370,9 @@ class VisoraAppHome(ctk.CTk):
             if not nome:
                 messagebox.showerror("Erro de Validação", "O nome do projeto é obrigatório.")
                 return
+            if not caminho or not os.path.isdir(caminho):
+                messagebox.showerror("Erro de Validação", "Selecione uma pasta válida para o projeto.")
+                return
 
             novo_proj = self.adicionar_aos_recentes(nome, caminho, topologia)
             ao_fechar_modal()
@@ -387,7 +390,15 @@ class VisoraAppHome(ctk.CTk):
         pasta = filedialog.askdirectory(title="Selecione a pasta do projeto existente")
         if pasta:
             nome = os.path.basename(pasta)
-            novo_proj = self.adicionar_aos_recentes(nome, pasta, "Bounding Boxes")
+            pasta_annotations = os.path.join(pasta, "annotations")
+            topologia = "Bounding Boxes"
+            if os.path.isdir(pasta_annotations):
+                arquivos_anotacao = os.listdir(pasta_annotations)
+                if any(nome_arquivo.lower().endswith(".json") for nome_arquivo in arquivos_anotacao):
+                    topologia = "Instance Mask"
+                elif any(nome_arquivo.lower().endswith(".xml") for nome_arquivo in arquivos_anotacao):
+                    topologia = "Bounding Boxes"
+            novo_proj = self.adicionar_aos_recentes(nome, pasta, topologia)
             self.abrir_workspace_studio(novo_proj)
 
     def carregar_projeto(self, proj_data):

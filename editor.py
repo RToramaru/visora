@@ -2,12 +2,34 @@ import os
 import shutil
 import cv2
 import json
+import numpy as np
 import threading
+import urllib.request
+import warnings
 import xml.etree.ElementTree as ET
 from xml.dom import minidom
 import customtkinter as ctk
 from tkinter import filedialog, messagebox
 from PIL import Image, ImageTk
+
+try:
+    warnings.filterwarnings(
+        "ignore", message="Importing from timm.models.layers is deprecated.*", category=FutureWarning
+    )
+    warnings.filterwarnings(
+        "ignore", message="Importing from timm.models.registry is deprecated.*", category=FutureWarning
+    )
+    warnings.filterwarnings(
+        "ignore", message="Overwriting tiny_vit_.* in registry with mobile_sam.*", category=UserWarning
+    )
+    import torch
+    import torch.nn.functional as F
+    from mobile_sam import build_sam_vit_t
+    from mobile_sam.utils.transforms import ResizeLongestSide
+
+    MOBILE_SAM_DISPONIVEL = True
+except ImportError:
+    MOBILE_SAM_DISPONIVEL = False
 
 # Importação opcional segura do Ultralytics YOLO
 try:
@@ -167,6 +189,7 @@ class VisoraStudioFrame(ctk.CTkFrame):
             padx=8, pady=2
         )
         self.lbl_amostra_tag.pack(side="left")
+        self.lbl_amostra_tag.pack_forget()
 
         self.lbl_coords = ctk.CTkLabel(
             self.preview_top_bar,
@@ -348,6 +371,17 @@ class VisoraStudioFrame(ctk.CTkFrame):
                                    hover_color="#dc2626", command=self.limpar_anotacoes)
         btn_limpar.pack(side="left", padx=10)
 
+        if topologia != "Bounding Boxes":
+            ctk.CTkLabel(
+                self.action_bar, text="Botão direito conclui o polígono",
+                font=ctk.CTkFont(size=10, weight="bold"), text_color="#86efac"
+            ).pack(side="left", padx=(8, 4))
+            btn_fechar_poligono = ctk.CTkButton(
+                self.action_bar, text="✓ Fechar Polígono", width=130, height=28,
+                fg_color="#16a34a", hover_color="#15803d", command=self.on_polygon_finish
+            )
+            btn_fechar_poligono.pack(side="left", padx=2)
+
         btn_prox_amostra = ctk.CTkButton(
             self.action_bar, text="Próxima Amostra ⏭", width=130, height=28,
             fg_color="#334155", hover_color="#475569", font=ctk.CTkFont(size=11),
@@ -426,7 +460,13 @@ class VisoraStudioFrame(ctk.CTkFrame):
         lbl.pack(side="left", padx=15)
 
     def mudar_passo(self, step_id):
+        if (self.step_atual == 2 and step_id != 2 and
+            self.project_data.get("topologia", "Bounding Boxes") != "Bounding Boxes"):
+            self.on_polygon_finish()
         self.step_atual = step_id
+        self.lbl_amostra_tag.pack_forget()
+        if step_id == 2:
+            self.lbl_amostra_tag.pack(side="left")
         for idx, btn in self.steps_btn.items():
             if idx == step_id:
                 btn.configure(fg_color="#1d283a", text_color="#38bdf8")
@@ -784,45 +824,59 @@ class VisoraStudioFrame(ctk.CTkFrame):
         )
         btn_opencv.pack(anchor="w", padx=15, pady=(0, 12))
 
-        # --- CARTÃO MÉTODO 3 ---
-        card_yolo = ctk.CTkFrame(self.frame_propagacao, fg_color="#111622", border_width=1, border_color="#2563eb",
-                                 corner_radius=6)
-        card_yolo.pack(fill="x", padx=10, pady=6)
+        if self.project_data.get("topologia", "Bounding Boxes") == "Bounding Boxes":
+            # --- CARTÃO MÉTODO 3 ---
+            card_yolo = ctk.CTkFrame(self.frame_propagacao, fg_color="#111622", border_width=1,
+                                     border_color="#2563eb", corner_radius=6)
+            card_yolo.pack(fill="x", padx=10, pady=6)
 
-        lbl_m3 = ctk.CTkLabel(card_yolo, text="Modelo Ultralytics YOLO (Treinamento Rápido / Inferência Inteligente)",
-                              font=ctk.CTkFont(size=12, weight="bold"), text_color="#38bdf8")
-        lbl_m3.pack(anchor="w", padx=15, pady=(12, 4))
+            lbl_m3 = ctk.CTkLabel(
+                card_yolo, text="Modelo Ultralytics YOLO (Treinamento Rápido / Inferência Inteligente)",
+                font=ctk.CTkFont(size=12, weight="bold"), text_color="#38bdf8"
+            )
+            lbl_m3.pack(anchor="w", padx=15, pady=(12, 4))
 
-        desc_m3 = ctk.CTkLabel(
-            card_yolo,
-            text="• Como funciona: Utiliza inteligência artificial avançada baseada em deep learning (YOLO) para analisar todas as imagens do dataset e detectar os objetos automaticamente com alta precisão.\n• Ideal para: Datasets complexos, com múltiplos objetos dinâmicos, garantindo detecção inteligente e automatizada em larga escala.",
-            font=ctk.CTkFont(size=11), text_color="#94a3b8", justify="left", wraplength=680
-        )
-        desc_m3.pack(anchor="w", padx=15, pady=(0, 8))
+            desc_m3 = ctk.CTkLabel(
+                card_yolo,
+                text="• Como funciona: Utiliza inteligência artificial avançada baseada em deep learning (YOLO) para analisar todas as imagens do dataset e detectar os objetos automaticamente com alta precisão.\n• Ideal para: Datasets complexos, com múltiplos objetos dinâmicos, garantindo detecção inteligente e automatizada em larga escala.",
+                font=ctk.CTkFont(size=11), text_color="#94a3b8", justify="left", wraplength=680
+            )
+            desc_m3.pack(anchor="w", padx=15, pady=(0, 8))
 
-        btn_yolo = ctk.CTkButton(
-            card_yolo, text="Executar YOLO AI", width=180, height=32,
-            fg_color="#2563eb", hover_color="#1d4ed8", font=ctk.CTkFont(size=11, weight="bold"),
-            command=lambda: self.executar_modelo_propagacao("yolo")
-        )
-        btn_yolo.pack(anchor="w", padx=15, pady=(0, 12))
+            btn_yolo = ctk.CTkButton(
+                card_yolo, text="Executar YOLO AI", width=180, height=32,
+                fg_color="#2563eb", hover_color="#1d4ed8", font=ctk.CTkFont(size=11, weight="bold"),
+                command=lambda: self.executar_modelo_propagacao("yolo")
+            )
+            btn_yolo.pack(anchor="w", padx=15, pady=(0, 12))
 
     def executar_modelo_propagacao(self, metodo):
         caminho_proj = self.project_data.get("caminho", "")
         pasta_frames = os.path.join(caminho_proj, "frames")
         pasta_annotations = os.path.join(caminho_proj, "annotations")
+        topologia = self.project_data.get("topologia", "Bounding Boxes")
+
+        if metodo == "yolo" and topologia != "Bounding Boxes":
+            messagebox.showwarning(
+                "Método indisponível",
+                "A propagação YOLO está disponível somente para caixas delimitadoras."
+            )
+            return
 
         if not os.path.exists(pasta_annotations):
             messagebox.showwarning("Aviso", "A pasta de anotações não existe. Rotule uma amostra na Etapa 2.")
             return
 
-        arquivos_xml_json = [f for f in os.listdir(pasta_annotations) if f.endswith(('.xml', '.json'))]
-        if not arquivos_xml_json:
+        extensao_rotulo = ".xml" if topologia == "Bounding Boxes" else ".json"
+        arquivos_rotulo = [
+            f for f in os.listdir(pasta_annotations) if f.lower().endswith(extensao_rotulo)
+        ]
+        if not arquivos_rotulo:
             messagebox.showwarning("Aviso",
-                                   "Você precisa rotular e salvar pelo menos uma amostra na Etapa 2 antes de propagar!")
+                                   f"Você precisa salvar pelo menos uma anotação {extensao_rotulo} antes de propagar!")
             return
 
-        molde_path = os.path.join(pasta_annotations, arquivos_xml_json[0])
+        molde_path = os.path.join(pasta_annotations, arquivos_rotulo[0])
 
         nomes_metodos = {
             "molde": "Interpolagem de Referências",
@@ -838,7 +892,6 @@ class VisoraStudioFrame(ctk.CTkFrame):
             try:
                 diretorio_busca = pasta_frames if os.path.exists(pasta_frames) else caminho_proj
                 frames = sorted([f for f in os.listdir(diretorio_busca) if f.lower().endswith(EXTENSOES_IMAGEM)])
-                topologia = self.project_data.get("topologia", "Bounding Boxes")
                 ext_rotulo = ".xml" if topologia == "Bounding Boxes" else ".json"
 
                 if metodo == "yolo" and ULTRALYTICS_DISPONIVEL:
@@ -1206,6 +1259,11 @@ class VisoraStudioFrame(ctk.CTkFrame):
 
     def on_polygon_click(self, event):
         x, y = event.x, event.y
+        if len(self.current_polygon_points) >= 3:
+            primeiro_x, primeiro_y = self.current_polygon_points[0]
+            if ((x - primeiro_x) ** 2 + (y - primeiro_y) ** 2) <= 12 ** 2:
+                self.on_polygon_finish()
+                return
         self.current_polygon_points.append((x, y))
         vid = self.canvas_anotacao.create_oval(x - 3, y - 3, x + 3, y + 3, fill="#38bdf8", outline="#ffffff")
         self.polygon_line_ids.append(vid)
@@ -1265,14 +1323,29 @@ class VisoraStudioFrame(ctk.CTkFrame):
 
     def salvar_anotacoes(self, silencioso=False):
         if not self.arquivo_selecionado:
+            if not silencioso:
+                messagebox.showwarning("Aviso", "Nenhuma imagem está selecionada para receber a anotação.")
             return
 
         caminho_proj = self.project_data.get("caminho", "")
-        if not caminho_proj:
+        if not caminho_proj or not os.path.isdir(caminho_proj):
+            caminho_proj = self.garantir_diretorio_projeto()
+        if not caminho_proj or not os.path.isdir(caminho_proj):
+            messagebox.showerror(
+                "Erro ao salvar anotação",
+                "Selecione uma pasta de projeto válida antes de salvar o rótulo."
+            )
             return
 
         pasta_annotations = os.path.join(caminho_proj, "annotations")
-        os.makedirs(pasta_annotations, exist_ok=True)
+        try:
+            os.makedirs(pasta_annotations, exist_ok=True)
+        except OSError as erro:
+            messagebox.showerror(
+                "Erro ao salvar anotação",
+                f"Não foi possível criar a pasta de anotações:\n{erro}"
+            )
+            return
 
         nome_arquivo_img = os.path.basename(self.arquivo_selecionado)
         nome_base = os.path.splitext(nome_arquivo_img)[0]
@@ -1727,8 +1800,6 @@ class VisoraStudioFrame(ctk.CTkFrame):
             self.entry_pasta_treinamento.insert(0, pasta)
 
     def solicitar_pausa_treinamento(self):
-        if self.modelo_treinamento_ativo is None:
-            return
         self.treino_pausar_solicitado = True
         self.btn_pausar_treino.configure(state="disabled", text="⏳ Pausando...")
         self.log_treinamento("[INFO] Pausa solicitada. O treinamento será interrompido ao fim da época atual...")
@@ -1779,6 +1850,8 @@ class VisoraStudioFrame(ctk.CTkFrame):
             threading.Thread(target=self._treinar_yolo_threaded, daemon=True).start()
         else:
             self.btn_iniciar_treino.configure(state="disabled")
+            self.btn_pausar_treino.configure(state="normal")
+            self.treino_pausar_solicitado = False
             self.mostrar_carregamento("Treinando modelo Mobile SAM...")
             threading.Thread(target=self._treinar_mobile_sam_threaded, daemon=True).start()
 
@@ -1882,22 +1955,177 @@ class VisoraStudioFrame(ctk.CTkFrame):
             err_msg = str(e)
             self.after(0, lambda: self._finalizar_treino_com_erro(f"Falha no treinamento YOLO: {err_msg}"))
 
+    def _obter_checkpoint_base_mobile_sam(self, caminho_proj):
+        caminho_checkpoint = os.path.join(caminho_proj, "mobile_sam.pt")
+        if not os.path.exists(caminho_checkpoint):
+            url_checkpoint = (
+                "https://github.com/ChaoningZhang/MobileSAM/raw/master/weights/mobile_sam.pt"
+            )
+            self.after(0, lambda: self.log_treinamento(
+                "[MOBILE SAM] Baixando checkpoint pré-treinado..."
+            ))
+            urllib.request.urlretrieve(url_checkpoint, caminho_checkpoint)
+        return caminho_checkpoint
+
+    def _carregar_amostras_mobile_sam(self, caminho_proj):
+        pasta_annotations = os.path.join(caminho_proj, "annotations")
+        diretorio_imagens = os.path.join(caminho_proj, "frames")
+        if not os.path.isdir(diretorio_imagens):
+            diretorio_imagens = caminho_proj
+
+        amostras = []
+        if not os.path.isdir(pasta_annotations):
+            return amostras
+
+        for nome_rotulo in os.listdir(pasta_annotations):
+            if not nome_rotulo.lower().endswith(".json"):
+                continue
+            nome_base = os.path.splitext(nome_rotulo)[0]
+            nome_imagem = next(
+                (nome_base + ext for ext in EXTENSOES_IMAGEM
+                 if os.path.exists(os.path.join(diretorio_imagens, nome_base + ext))),
+                None
+            )
+            if not nome_imagem:
+                continue
+            try:
+                with open(os.path.join(pasta_annotations, nome_rotulo), "r", encoding="utf-8") as arquivo:
+                    dados = json.load(arquivo)
+                for forma in dados.get("shapes", []):
+                    pontos = forma.get("points", [])
+                    if len(pontos) >= 3:
+                        amostras.append((
+                            os.path.join(diretorio_imagens, nome_imagem),
+                            [[float(x), float(y)] for x, y in pontos]
+                        ))
+            except (OSError, ValueError, TypeError):
+                continue
+        return amostras
+
     def _treinar_mobile_sam_threaded(self):
         caminho_proj = self.project_data.get("caminho", "")
+        if not MOBILE_SAM_DISPONIVEL:
+            self.after(0, lambda: self._finalizar_treino_com_erro(
+                "MobileSAM e suas dependências não estão instalados no ambiente."
+            ))
+            return
 
         try:
-            epochs = int(self.entry_epochs.get().strip())
+            epochs = max(1, int(self.entry_epochs.get().strip()))
         except ValueError:
             epochs = 50
 
-        self.after(0,
-                   lambda: self.log_treinamento("[MOBILE SAM] Iniciando preparação do treinamento de Segmentação..."))
+        amostras = self._carregar_amostras_mobile_sam(caminho_proj)
+        if not amostras:
+            self.after(0, lambda: self._finalizar_treino_com_erro(
+                "Nenhum par imagem/JSON com polígonos válidos foi encontrado para o MobileSAM."
+            ))
+            return
 
-        self.after(0, lambda: self.log_treinamento(
-            "[MOBILE SAM] Executando rotina customizada de treinamento de Polígonos..."))
-        self.after(0, lambda: self.log_treinamento(f"[MOBILE SAM] Treinando com base na pasta: {caminho_proj}"))
+        try:
+            dispositivo = "cuda" if torch.cuda.is_available() else "cpu"
+            caminho_saida = os.path.join(caminho_proj, "runs", "mobile_sam_train")
+            os.makedirs(caminho_saida, exist_ok=True)
+            caminho_continuacao = self.entry_pasta_treinamento.get().strip()
+            checkpoint = self.localizar_checkpoint_treinamento(caminho_continuacao) \
+                if self.var_modo_treinamento.get() == "continuar" else None
+            if checkpoint is None:
+                checkpoint = self._obter_checkpoint_base_mobile_sam(caminho_proj)
 
-        self.after(0, lambda: self._finalizar_treino_com_sucesso("Treinamento com Mobile SAM concluído!"))
+            modelo = build_sam_vit_t(checkpoint=checkpoint).to(dispositivo)
+            self.modelo_treinamento_ativo = modelo
+            modelo.image_encoder.eval()
+            for parametro in modelo.image_encoder.parameters():
+                parametro.requires_grad = False
+            modelo.prompt_encoder.train()
+            modelo.mask_decoder.train()
+            parametros = list(modelo.prompt_encoder.parameters()) + list(modelo.mask_decoder.parameters())
+            otimizador = torch.optim.AdamW(parametros, lr=1e-5, weight_decay=1e-4)
+            transformacao = ResizeLongestSide(modelo.image_encoder.img_size)
+            melhor_loss = float("inf")
+            caminho_last = os.path.join(caminho_saida, "last.pt")
+            caminho_best = os.path.join(caminho_saida, "best.pt")
+
+            self.after(0, lambda: self.log_treinamento(
+                f"[MOBILE SAM] Fine-tuning real em {dispositivo}: {len(amostras)} polígonos, {epochs} épocas."
+            ))
+
+            for epoca in range(epochs):
+                if self.treino_pausar_solicitado:
+                    break
+                perda_epoca = 0.0
+                for caminho_imagem, pontos in amostras:
+                    if self.treino_pausar_solicitado:
+                        break
+                    imagem_bgr = cv2.imread(caminho_imagem)
+                    if imagem_bgr is None:
+                        raise FileNotFoundError(f"Não foi possível carregar a imagem: {caminho_imagem}")
+                    imagem_np = cv2.cvtColor(imagem_bgr, cv2.COLOR_BGR2RGB)
+                    altura, largura = imagem_np.shape[:2]
+                    mascara_np = np.zeros((altura, largura), dtype="uint8")
+                    cv2.fillPoly(mascara_np, [np.array(pontos, dtype="int32")], 1)
+                    imagem_transformada = transformacao.apply_image(imagem_np)
+                    imagem_tensor = torch.as_tensor(imagem_transformada, device=dispositivo).permute(2, 0, 1).float()
+                    mascara_transformada = cv2.resize(
+                        mascara_np, (imagem_transformada.shape[1], imagem_transformada.shape[0]),
+                        interpolation=cv2.INTER_NEAREST
+                    )
+                    mascara_tensor = torch.as_tensor(mascara_transformada, device=dispositivo).float()
+                    mascara_tensor = F.pad(
+                        mascara_tensor,
+                        (0, modelo.image_encoder.img_size - mascara_tensor.shape[1],
+                         0, modelo.image_encoder.img_size - mascara_tensor.shape[0])
+                    )[None, None]
+                    mascara_alvo = F.interpolate(mascara_tensor, (256, 256), mode="nearest")
+                    caixa = [min(x for x, _ in pontos), min(y for _, y in pontos),
+                             max(x for x, _ in pontos), max(y for _, y in pontos)]
+                    caixa = transformacao.apply_boxes(
+                        np.array([caixa]), (altura, largura)
+                    )
+                    caixa_tensor = torch.as_tensor(caixa, dtype=torch.float32, device=dispositivo)
+
+                    otimizador.zero_grad(set_to_none=True)
+                    with torch.no_grad():
+                        embedding = modelo.image_encoder(modelo.preprocess(imagem_tensor)[None])
+                    sparse, densa = modelo.prompt_encoder(points=None, boxes=caixa_tensor, masks=None)
+                    logits, _ = modelo.mask_decoder(
+                        image_embeddings=embedding,
+                        image_pe=modelo.prompt_encoder.get_dense_pe(),
+                        sparse_prompt_embeddings=sparse,
+                        dense_prompt_embeddings=densa,
+                        multimask_output=False
+                    )
+                    alvo = F.interpolate(mascara_alvo, logits.shape[-2:], mode="nearest")
+                    perda_bce = F.binary_cross_entropy_with_logits(logits, alvo)
+                    probabilidades = torch.sigmoid(logits)
+                    intersecao = (probabilidades * alvo).sum()
+                    perda_dice = 1 - (2 * intersecao + 1) / (probabilidades.sum() + alvo.sum() + 1)
+                    perda = perda_bce + perda_dice
+                    perda.backward()
+                    otimizador.step()
+                    perda_epoca += perda.item()
+
+                perda_media = perda_epoca / max(1, len(amostras))
+                torch.save(modelo.state_dict(), caminho_last)
+                if perda_media < melhor_loss:
+                    melhor_loss = perda_media
+                    torch.save(modelo.state_dict(), caminho_best)
+                self.after(0, lambda epoca=epoca, perda_media=perda_media: self.log_treinamento(
+                    f"[MOBILE SAM] Época {epoca + 1}/{epochs} - loss: {perda_media:.5f}"
+                ))
+
+            pausado = self.treino_pausar_solicitado
+            mensagem = (
+                f"Treinamento MobileSAM pausado. Checkpoint salvo em:\n{caminho_last}"
+                if pausado else
+                f"Treinamento MobileSAM concluído. Melhor modelo salvo em:\n{caminho_best}"
+            )
+            self.after(0, lambda: self._finalizar_treino_com_sucesso(mensagem))
+        except Exception as erro:
+            erro_msg = str(erro)
+            self.after(0, lambda: self._finalizar_treino_com_erro(
+                f"Falha no treinamento MobileSAM: {erro_msg}"
+            ))
 
     def _finalizar_treino_com_sucesso(self, mensagem):
         self.esconder_carregamento()
