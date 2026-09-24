@@ -24,6 +24,7 @@ class ReviewPanel:
             self.owner.rev_right_frame, bg="#05070a", highlightthickness=0
         )
         self.owner.rev_canvas.pack(fill="both", expand=True, padx=10, pady=10)
+        self.owner.rev_canvas.bind("<Configure>", self.owner.atualizar_preview_revisao)
         self.owner.rev_info_lbl = ctk.CTkLabel(
             self.owner.rev_right_frame, text="Selecione um frame ao lado para auditar.",
             font=ctk.CTkFont(size=11), text_color="#94a3b8"

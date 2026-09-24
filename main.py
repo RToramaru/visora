@@ -1,5 +1,6 @@
 import os
 import sys
+import ctypes
 import tkinter as tk
 from tkinter import filedialog, messagebox
 import customtkinter as ctk
@@ -18,6 +19,11 @@ ARQUIVO_RECENTES = "recentes.json"
 def caminho_recurso(caminho_relativo):
     base_path = getattr(sys, "_MEIPASS", os.path.dirname(os.path.abspath(__file__)))
     return os.path.join(base_path, caminho_relativo)
+
+
+def configurar_identidade_windows():
+    if sys.platform == "win32":
+        ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID("Visora.SpectraCV.1")
 
 
 class CardTipoProblema(ctk.CTkFrame):
@@ -62,13 +68,14 @@ class CardTipoProblema(ctk.CTkFrame):
 
 class VisoraAppHome(ctk.CTk):
     def __init__(self):
+        configurar_identidade_windows()
         super().__init__()
 
         self.title("SPECTRA CV / VISORA")
         self.geometry("1100x700")
         self.minsize(950, 600)
         self.configure(fg_color="#0b0e14")
-        self.iconbitmap(caminho_recurso(os.path.join("imagens", "icone.ico")))
+        self.iconbitmap(default=caminho_recurso(os.path.join("imagens", "icone.ico")))
 
         self.recent_projects_store = RecentProjectsStore(ARQUIVO_RECENTES)
         self.projetos_recentes = self.carregar_recentes()[:5]

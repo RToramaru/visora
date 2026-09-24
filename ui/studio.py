@@ -869,7 +869,9 @@ class VisoraStudioFrame(ctk.CTkFrame):
         self.revisao_rotulo_atual = rotulo_path
 
         pil_img = Image.open(img_path)
-        w_box, h_box = 450, 300
+        self.rev_canvas.update_idletasks()
+        w_box = max(self.rev_canvas.winfo_width(), 1)
+        h_box = max(self.rev_canvas.winfo_height(), 1)
         new_w, new_h = self.redimensionar_proporcional(pil_img.width, pil_img.height, w_box, h_box)
         pil_resized = pil_img.resize((new_w, new_h), Image.Resampling.LANCZOS)
 
@@ -933,6 +935,10 @@ class VisoraStudioFrame(ctk.CTkFrame):
 
         status_str = f"Classes: {', '.join(set(classes_encontradas))}" if classes_encontradas else "⚠️ Sem rótulos salvos"
         self.rev_info_lbl.configure(text=f"Arquivo: {os.path.basename(img_path)}  |  {status_str}")
+
+    def atualizar_preview_revisao(self, _event=None):
+        if self.revisao_amostra_atual and self.revisao_rotulo_atual:
+            self.carregar_preview_revisao(self.revisao_amostra_atual, self.revisao_rotulo_atual)
 
     def excluir_anotacoes_em_lote(self):
         removidos_count = 0
