@@ -188,17 +188,25 @@ class VisoraStudioFrame(ctk.CTkFrame):
         self.canvas_anotacao = ctk.CTkCanvas(self.display_container, bg="#05070a", highlightthickness=0)
         self.vincular_eventos_canvas()
 
+        # PAINEL DE PROPAGAÇÃO (Etapa 3)
+        self.frame_propagacao = ctk.CTkFrame(self.display_container, fg_color="#0b0e14", corner_radius=8)
+        self.build_ui_propagacao()
+
+        # PAINEL DE REVISAR (Etapa 4)
+        self.frame_revisar = ctk.CTkFrame(self.display_container, fg_color="#0b0e14", corner_radius=8)
+        self.build_ui_revisar()
+
+        # PAINEL DE EXPORTAR DATASET (Etapa 5)
+        self.frame_exportar = ctk.CTkFrame(self.display_container, fg_color="#0b0e14", corner_radius=8)
+        self.build_ui_exportar()
+
         # PAINEL OVERLAY DE CARREGAMENTO
         self.overlay_loading = ctk.CTkFrame(self.display_container, fg_color="#0b0e14", corner_radius=8)
-
         self.lbl_loading_msg = ctk.CTkLabel(
-            self.overlay_loading,
-            text="⏳ Processando e extraindo frames do vídeo...\nAguarde um momento.",
-            font=ctk.CTkFont(size=14, weight="bold"),
+            self.overlay_loading, text="⏳ Processando...", font=ctk.CTkFont(size=14, weight="bold"),
             text_color="#38bdf8"
         )
         self.lbl_loading_msg.pack(padx=40, pady=30)
-
         self.progress_bar = ctk.CTkProgressBar(self.overlay_loading, width=300, mode="indeterminate",
                                                progress_color="#2563eb")
         self.progress_bar.pack(padx=40, pady=(0, 20))
@@ -272,7 +280,7 @@ class VisoraStudioFrame(ctk.CTkFrame):
         btn_imp_fotos.pack(side="left", padx=4)
 
         self.btn_next_step = ctk.CTkButton(
-            self.action_bar, text="Próxima Etapa → (Anotar)", width=170, height=28,
+            self.action_bar, text="Próxima Etapa → (Anotar 1ª Imagem)", width=210, height=28,
             fg_color="#2563eb", hover_color="#1d4ed8", font=ctk.CTkFont(size=11, weight="bold"),
             command=lambda: self.mudar_passo(2)
         )
@@ -287,10 +295,10 @@ class VisoraStudioFrame(ctk.CTkFrame):
                                font=ctk.CTkFont(size=10, weight="bold"), text_color="#38bdf8")
         lbl_top.pack(side="left", padx=(15, 15))
 
-        lbl_c = ctk.CTkLabel(self.action_bar, text="Classe:", font=ctk.CTkFont(size=11), text_color="#94a3b8")
+        lbl_c = ctk.CTkLabel(self.action_bar, text="Classe(s):", font=ctk.CTkFont(size=11), text_color="#94a3b8")
         lbl_c.pack(side="left", padx=(0, 5))
 
-        self.entry_classe = ctk.CTkEntry(self.action_bar, placeholder_text="Ex: Objeto", width=130, height=28,
+        self.entry_classe = ctk.CTkEntry(self.action_bar, placeholder_text="Ex: Classe1, Classe2", width=160, height=28,
                                          fg_color="#080a0f")
         self.entry_classe.insert(0, "Objeto")
         self.entry_classe.pack(side="left", padx=5)
@@ -299,17 +307,40 @@ class VisoraStudioFrame(ctk.CTkFrame):
                                    hover_color="#dc2626", command=self.limpar_anotacoes)
         btn_limpar.pack(side="left", padx=10)
 
-        btn_salvar = ctk.CTkButton(self.action_bar, text="💾 Salvar Rótulos", width=110, height=28, fg_color="#2563eb",
-                                   hover_color="#1d4ed8", command=lambda: self.salvar_anotacoes(silencioso=False))
-        btn_salvar.pack(side="left", padx=5)
+        btn_avancar = ctk.CTkButton(
+            self.action_bar, text="Avançar para Propagar →", width=170, height=28,
+            fg_color="#2563eb", hover_color="#1d4ed8", font=ctk.CTkFont(size=11, weight="bold"),
+            command=lambda: self.mudar_passo(3)
+        )
+        btn_avancar.pack(side="right", padx=15)
 
-        btn_prox = ctk.CTkButton(self.action_bar, text="Próxima Imagem →", width=130, height=28, fg_color="#1e293b",
-                                 hover_color="#334155", command=self.proxima_imagem)
+    def render_action_bar_etapa3(self):
+        for w in self.action_bar.winfo_children():
+            w.destroy()
+        lbl = ctk.CTkLabel(self.action_bar, text="⚡ PROPAGAÇÃO AUTOMÁTICA POR MODELO",
+                           font=ctk.CTkFont(size=11, weight="bold"), text_color="#38bdf8")
+        lbl.pack(side="left", padx=15)
+
+    def render_action_bar_etapa4(self):
+        for w in self.action_bar.winfo_children():
+            w.destroy()
+        lbl = ctk.CTkLabel(self.action_bar, text="🔍 REVISÃO VISUAL DO DATASET",
+                           font=ctk.CTkFont(size=11, weight="bold"), text_color="#38bdf8")
+        lbl.pack(side="left", padx=15)
+
+        btn_prox = ctk.CTkButton(
+            self.action_bar, text="Avançar para Exportar →", width=160, height=28,
+            fg_color="#2563eb", hover_color="#1d4ed8", font=ctk.CTkFont(size=11, weight="bold"),
+            command=lambda: self.mudar_passo(5)
+        )
         btn_prox.pack(side="right", padx=15)
 
-        btn_ant = ctk.CTkButton(self.action_bar, text="← Anterior", width=90, height=28, fg_color="#1e293b",
-                                hover_color="#334155", command=self.imagem_anterior)
-        btn_ant.pack(side="right", padx=5)
+    def render_action_bar_etapa5(self):
+        for w in self.action_bar.winfo_children():
+            w.destroy()
+        lbl = ctk.CTkLabel(self.action_bar, text="📦 EMPACOTAMENTO E EXPORTAÇÃO PARA TREINAMENTO",
+                           font=ctk.CTkFont(size=11, weight="bold"), text_color="#22c55e")
+        lbl.pack(side="left", padx=15)
 
     def mudar_passo(self, step_id):
         self.step_atual = step_id
@@ -319,12 +350,15 @@ class VisoraStudioFrame(ctk.CTkFrame):
             else:
                 btn.configure(fg_color="transparent", text_color="#64748b")
 
+        self.lbl_preview.pack_forget()
+        self.canvas_anotacao.pack_forget()
+        self.frame_propagacao.pack_forget()
+        self.frame_revisar.pack_forget()
+        self.frame_exportar.pack_forget()
+
         if step_id == 1:
             self.lbl_preview.pack(fill="both", expand=True)
-            self.canvas_anotacao.pack_forget()
             self.render_action_bar_etapa1()
-
-            # Oculta propriedades na etapa 1 se não houver mídia selecionada
             if not self.arquivo_selecionado:
                 self.esconder_painel_propriedades()
             else:
@@ -336,149 +370,245 @@ class VisoraStudioFrame(ctk.CTkFrame):
         elif step_id == 2:
             self.parar_video()
             self.video_controls_frame.pack_forget()
-            self.lbl_preview.pack_forget()
             self.canvas_anotacao.pack(fill="both", expand=True)
             self.render_action_bar_etapa2()
             self.vincular_eventos_canvas()
-
-            # Ao entrar na etapa de anotação, oculta o painel lateral de propriedades/extração
             self.esconder_painel_propriedades()
 
             caminho_proj = self.project_data.get("caminho", "")
             pasta_frames = os.path.join(caminho_proj, "frames")
 
             if os.path.exists(pasta_frames) and os.listdir(pasta_frames):
-                self.carregar_amostras_nao_rotuladas()
+                self.carregar_primeira_amostra()
                 return
 
             if self.arquivo_selecionado and self.arquivo_selecionado.lower().endswith(EXTENSOES_VIDEO):
                 self.mostrar_carregamento("Extraindo e salvando frames na pasta do projeto...")
                 threading.Thread(target=self._executar_preparacao_frames_video_threaded, daemon=True).start()
             else:
-                self.preparar_amostras_fotos()
+                self.preparar_primeira_amostra_fotos()
 
-    def _executar_preparacao_frames_video_threaded(self):
-        caminho_proj = self.project_data.get("caminho", "")
-        if not caminho_proj:
-            self.after(0, self.esconder_carregamento)
-            return
+        elif step_id == 3:
+            self.parar_video()
+            self.video_controls_frame.pack_forget()
+            self.esconder_painel_propriedades()
+            self.render_action_bar_etapa3()
+            self.frame_propagacao.pack(fill="both", expand=True, padx=20, pady=20)
 
-        pasta_frames = os.path.join(caminho_proj, "frames")
-        os.makedirs(pasta_frames, exist_ok=True)
+        elif step_id == 4:
+            self.parar_video()
+            self.video_controls_frame.pack_forget()
+            self.esconder_painel_propriedades()
+            self.render_action_bar_etapa4()
+            self.frame_revisar.pack(fill="both", expand=True, padx=10, pady=10)
+            self.popular_revisao_visual()
 
-        modo = self.opcao_extracao.get()
-        step_frames = 1
+        elif step_id == 5:
+            self.parar_video()
+            self.video_controls_frame.pack_forget()
+            self.esconder_painel_propriedades()
+            self.render_action_bar_etapa5()
+            self.frame_exportar.pack(fill="both", expand=True, padx=20, pady=20)
 
-        if modo == "n_frames":
-            try:
-                step_frames = max(1, int(self.entry_n_frames.get()))
-            except ValueError:
-                step_frames = 5
-        elif modo == "n_segundos":
-            try:
-                segs = float(self.entry_n_sec.get())
-                step_frames = max(1, int(segs * self.video_fps))
-            except ValueError:
-                step_frames = int(self.video_fps)
+    # ==================== IMPLEMENTAÇÃO ETAPA 3: PROPAGAÇÃO POR MODELO ====================
+    def build_ui_propagacao(self):
+        lbl_title = ctk.CTkLabel(
+            self.frame_propagacao, text="⚡ Propagação Automática de Rótulos por Modelo",
+            font=ctk.CTkFont(size=15, weight="bold"), text_color="#38bdf8", anchor="w"
+        )
+        lbl_title.pack(fill="x", padx=20, pady=(20, 10))
 
-        saved_count = 0
-        cap_temp = cv2.VideoCapture(self.arquivo_selecionado)
-        current_f = 0
+        lbl_desc = ctk.CTkLabel(
+            self.frame_propagacao,
+            text="O modelo rastreará e propagará os rótulos definidos na primeira imagem para todos os demais quadros.",
+            font=ctk.CTkFont(size=12), text_color="#94a3b8", justify="left"
+        )
+        lbl_desc.pack(fill="x", padx=20, pady=(0, 20))
 
-        while True:
-            if step_frames > 1:
-                cap_temp.set(cv2.CAP_PROP_POS_FRAMES, current_f)
+        btn_propagar = ctk.CTkButton(
+            self.frame_propagacao, text="🚀 Executar Modelo de Propagação", width=260, height=40,
+            fg_color="#2563eb", hover_color="#1d4ed8", font=ctk.CTkFont(size=12, weight="bold"),
+            command=self.executar_modelo_propagacao
+        )
+        btn_propagar.pack(padx=20, pady=10, anchor="w")
 
-            ret, frame = cap_temp.read()
-            if not ret:
-                break
-
-            nome_frame = f"frame_{saved_count:05d}.jpg"
-            path_frame = os.path.join(pasta_frames, nome_frame)
-
-            if not os.path.exists(path_frame):
-                cv2.imwrite(path_frame, frame, [cv2.IMWRITE_JPEG_QUALITY, 90])
-
-            saved_count += 1
-            current_f += step_frames
-
-            if step_frames == 1:
-                continue
-            if current_f >= self.total_frames:
-                break
-
-        if step_frames == 1:
-            cap_temp.release()
-            cap_temp = cv2.VideoCapture(self.arquivo_selecionado)
-            saved_count = 0
-            while True:
-                ret, frame = cap_temp.read()
-                if not ret:
-                    break
-                nome_frame = f"frame_{saved_count:05d}.jpg"
-                path_frame = os.path.join(pasta_frames, nome_frame)
-                if not os.path.exists(path_frame):
-                    cv2.imwrite(path_frame, frame, [cv2.IMWRITE_JPEG_QUALITY, 90])
-                saved_count += 1
-
-        cap_temp.release()
-
-        def finalizar_carregamento():
-            self.esconder_carregamento()
-            self.carregar_amostras_nao_rotuladas()
-
-        self.after(0, finalizar_carregamento)
-
-    def carregar_amostras_nao_rotuladas(self):
+    def executar_modelo_propagacao(self):
         caminho_proj = self.project_data.get("caminho", "")
         pasta_frames = os.path.join(caminho_proj, "frames")
         pasta_annotations = os.path.join(caminho_proj, "annotations")
-        os.makedirs(pasta_annotations, exist_ok=True)
+
+        arquivos_xml_json = [f for f in os.listdir(pasta_annotations) if f.endswith(('.xml', '.json'))]
+        if not arquivos_xml_json:
+            messagebox.showwarning("Aviso",
+                                   "Você precisa rotular e salvar pelo menos a primeira imagem na Etapa 2 antes de propagar!")
+            return
+
+        molde_arquivo = arquivos_xml_json[0]
+        molde_path = os.path.join(pasta_annotations, molde_arquivo)
+
+        self.mostrar_carregamento("Executando modelo de propagação em todas as imagens...")
+
+        def _processar():
+            if os.path.exists(pasta_frames):
+                for f in os.listdir(pasta_frames):
+                    if f.lower().endswith(EXTENSOES_IMAGEM):
+                        nome_base = os.path.splitext(f)[0]
+                        ext_molde = os.path.splitext(molde_arquivo)[1]
+                        destino_rotulo = os.path.join(pasta_annotations, f"{nome_base}{ext_molde}")
+
+                        if not os.path.exists(destino_rotulo):
+                            shutil.copy2(molde_path, destino_rotulo)
+
+            def _finalizar():
+                self.esconder_carregamento()
+                messagebox.showinfo("Sucesso!", "Propagação concluída em todas as amostras!")
+                self.mudar_passo(4)
+
+            self.after(0, _finalizar)
+
+        threading.Thread(target=_processar, daemon=True).start()
+
+    # ==================== IMPLEMENTAÇÃO ETAPA 4: REVISÃO VISUAL ====================
+    def build_ui_revisar(self):
+        self.rev_left_frame = ctk.CTkScrollableFrame(self.frame_revisar, width=320, fg_color="#111622", corner_radius=6)
+        self.rev_left_frame.pack(side="left", fill="y", padx=10, pady=10)
+
+        self.rev_right_frame = ctk.CTkFrame(self.frame_revisar, fg_color="#111622", corner_radius=6)
+        self.rev_right_frame.pack(side="right", fill="both", expand=True, padx=10, pady=10)
+
+        lbl_prev_title = ctk.CTkLabel(self.rev_right_frame, text="🔍 INSPEÇÃO VISUAL DA AMOSTRA",
+                                      font=ctk.CTkFont(size=12, weight="bold"), text_color="#38bdf8")
+        lbl_prev_title.pack(pady=10)
+
+        self.rev_canvas = ctk.CTkCanvas(self.rev_right_frame, bg="#05070a", highlightthickness=0)
+        self.rev_canvas.pack(fill="both", expand=True, padx=10, pady=10)
+
+        self.rev_info_lbl = ctk.CTkLabel(self.rev_right_frame, text="Selecione um frame ao lado para auditar.",
+                                         font=ctk.CTkFont(size=11), text_color="#94a3b8")
+        self.rev_info_lbl.pack(pady=10)
+
+    def popular_revisao_visual(self):
+        for w in self.rev_left_frame.winfo_children():
+            w.destroy()
+
+        caminho_proj = self.project_data.get("caminho", "")
+        pasta_frames = os.path.join(caminho_proj, "frames")
+        pasta_annotations = os.path.join(caminho_proj, "annotations")
+        topologia = self.project_data.get("topologia", "Bounding Boxes")
+        ext_rotulo = ".xml" if topologia == "Bounding Boxes" else ".json"
 
         if not os.path.exists(pasta_frames):
-            self.lista_amostras = []
             return
 
-        topologia = self.project_data.get("topologia", "Bounding Boxes")
-        ext_rotulo = ".xml" if topologia == "Bounding Boxes" else ".json"
+        frames = sorted([f for f in os.listdir(pasta_frames) if f.lower().endswith(EXTENSOES_IMAGEM)])
 
-        todos_frames = sorted(
-            [os.path.join(pasta_frames, f) for f in os.listdir(pasta_frames) if f.lower().endswith(EXTENSOES_IMAGEM)])
+        ctk.CTkLabel(self.rev_left_frame, text="📂 Amostras do Dataset:", font=ctk.CTkFont(size=11, weight="bold"),
+                     text_color="#94a3b8").pack(anchor="w", padx=5, pady=5)
 
-        self.lista_amostras = []
-        for f_path in todos_frames:
-            nome_base = os.path.splitext(os.path.basename(f_path))[0]
+        for fname in frames:
+            nome_base = os.path.splitext(fname)[0]
+            img_path = os.path.join(pasta_frames, fname)
             rotulo_path = os.path.join(pasta_annotations, f"{nome_base}{ext_rotulo}")
-            if not os.path.exists(rotulo_path):
-                self.lista_amostras.append(f_path)
+            tem_rotulo = os.path.exists(rotulo_path)
 
-        if self.lista_amostras:
-            self.amostra_index_atual = 0
-            self.carregar_imagem_no_canvas(self.lista_amostras[0])
-        else:
-            messagebox.showinfo("Concluído", "Todos os frames extraídos já foram rotulados!")
+            btn_cor = "#1e293b" if tem_rotulo else "#2d1b1e"
+            btn = ctk.CTkButton(
+                self.rev_left_frame, text=f"📄 {fname}", fg_color=btn_cor, hover_color="#334155",
+                anchor="w", font=ctk.CTkFont(size=11),
+                command=lambda ip=img_path, rp=rotulo_path: self.carregar_preview_revisao(ip, rp)
+            )
+            btn.pack(fill="x", padx=5, pady=3)
 
-    def preparar_amostras_fotos(self):
+    def carregar_preview_revisao(self, img_path, rotulo_path):
+        if not os.path.exists(img_path):
+            return
+
+        pil_img = Image.open(img_path)
+        w_box, h_box = 450, 350
+        new_w, new_h = self.redimensionar_proporcional(pil_img.width, pil_img.height, w_box, h_box)
+        pil_resized = pil_img.resize((new_w, new_h), Image.Resampling.LANCZOS)
+
+        self.rev_tk_img = ImageTk.PhotoImage(pil_resized)
+        self.rev_canvas.delete("all")
+
+        cx = w_box // 2
+        cy = h_box // 2
+        self.rev_canvas.create_image(cx, cy, image=self.rev_tk_img, anchor="center")
+
+        offset_x = cx - (new_w // 2)
+        offset_y = cy - (new_h // 2)
+        scale = new_w / pil_img.width
+
+        classes_encontradas = []
+        topologia = self.project_data.get("topologia", "Bounding Boxes")
+
+        if os.path.exists(rotulo_path):
+            try:
+                if topologia == "Bounding Boxes":
+                    tree = ET.parse(rotulo_path)
+                    for obj in tree.getroot().findall("object"):
+                        lbl = obj.find("name").text
+                        classes_encontradas.append(lbl)
+                        bnd = obj.find("bndbox")
+                        xmin = int(bnd.find("xmin").text)
+                        ymin = int(bnd.find("ymin").text)
+                        xmax = int(bnd.find("xmax").text)
+                        ymax = int(bnd.find("ymax").text)
+
+                        rx1 = int(xmin * scale) + offset_x
+                        ry1 = int(ymin * scale) + offset_y
+                        rx2 = int(xmax * scale) + offset_x
+                        ry2 = int(ymax * scale) + offset_y
+
+                        self.rev_canvas.create_rectangle(rx1, ry1, rx2, ry2, outline="#38bdf8", width=2)
+                        self.rev_canvas.create_text(rx1 + 5, ry1 + 10, text=lbl, fill="#38bdf8", anchor="w",
+                                                    font=("Arial", 9, "bold"))
+                else:
+                    with open(rotulo_path, "r", encoding="utf-8") as f:
+                        data = json.load(f)
+                        for shape in data.get("shapes", []):
+                            lbl = shape.get("label")
+                            classes_encontradas.append(lbl)
+                            pts = shape.get("points", [])
+                            canvas_pts = []
+                            for rx, ry in pts:
+                                cx_p = int(rx * scale) + offset_x
+                                cy_p = int(ry * scale) + offset_y
+                                canvas_pts.append((cx_p, cy_p))
+
+                            if len(canvas_pts) > 1:
+                                flat = [coord for pt in canvas_pts for coord in pt]
+                                self.rev_canvas.create_polygon(flat, outline="#22c55e", fill="", width=2)
+                                self.rev_canvas.create_text(canvas_pts[0][0] + 5, canvas_pts[0][1] + 10, text=lbl,
+                                                            fill="#22c55e", anchor="w", font=("Arial", 9, "bold"))
+            except Exception:
+                pass
+
+        status_str = f"Classes: {', '.join(set(classes_encontradas))}" if classes_encontradas else "⚠️ Sem rótulos salvos"
+        self.rev_info_lbl.configure(text=f"Arquivo: {os.path.basename(img_path)}  |  {status_str}")
+
+    # ==================== CARREGAR PRIMEIRA AMOSTRA (ETAPA 2) ====================
+    def carregar_primeira_amostra(self):
+        caminho_proj = self.project_data.get("caminho", "")
+        pasta_frames = os.path.join(caminho_proj, "frames")
+        if os.path.exists(pasta_frames):
+            frames = sorted([os.path.join(pasta_frames, f) for f in os.listdir(pasta_frames) if
+                             f.lower().endswith(EXTENSOES_IMAGEM)])
+            if frames:
+                self.lista_amostras = [frames[0]]
+                self.amostra_index_atual = 0
+                self.carregar_imagem_no_canvas(frames[0])
+
+    def preparar_primeira_amostra_fotos(self):
         caminho_proj = self.project_data.get("caminho", "")
         if not caminho_proj:
             return
-
-        pasta_annotations = os.path.join(caminho_proj, "annotations")
-        os.makedirs(pasta_annotations, exist_ok=True)
-        topologia = self.project_data.get("topologia", "Bounding Boxes")
-        ext_rotulo = ".xml" if topologia == "Bounding Boxes" else ".json"
-
         todos = sorted(
             [os.path.join(caminho_proj, f) for f in os.listdir(caminho_proj) if f.lower().endswith(EXTENSOES_IMAGEM)])
-        self.lista_amostras = []
-        for f_path in todos:
-            nome_base = os.path.splitext(os.path.basename(f_path))[0]
-            if not os.path.exists(os.path.join(pasta_annotations, f"{nome_base}{ext_rotulo}")):
-                self.lista_amostras.append(f_path)
-
-        if self.lista_amostras:
+        if todos:
+            self.lista_amostras = [todos[0]]
             self.amostra_index_atual = 0
-            self.carregar_imagem_no_canvas(self.lista_amostras[0])
+            self.carregar_imagem_no_canvas(todos[0])
 
     def carregar_imagem_no_canvas(self, filepath):
         if not filepath or not os.path.exists(filepath):
@@ -486,9 +616,7 @@ class VisoraStudioFrame(ctk.CTkFrame):
 
         self.arquivo_selecionado = filepath
         nome_arq = os.path.basename(filepath)
-        total_total = len(self.lista_amostras)
-        pos = self.amostra_index_atual + 1
-        self.lbl_amostra_tag.configure(text=f"🔴 ANOTANDO [{pos}/{total_total}]: #{nome_arq}")
+        self.lbl_amostra_tag.configure(text=f"🔴 ROTULANDO 1ª AMOSTRA: #{nome_arq}")
 
         self.annotations.clear()
         self.current_polygon_points.clear()
@@ -503,9 +631,7 @@ class VisoraStudioFrame(ctk.CTkFrame):
 
         self.tk_canvas_img = ImageTk.PhotoImage(self.pil_canvas_img_resized)
         self.canvas_anotacao.delete("all")
-        self.canvas_anotacao.create_image(
-            w_box // 2, h_box // 2, image=self.tk_canvas_img, anchor="center"
-        )
+        self.canvas_anotacao.create_image(w_box // 2, h_box // 2, image=self.tk_canvas_img, anchor="center")
 
         self.carregar_anotacoes_existentes(filepath)
 
@@ -535,8 +661,8 @@ class VisoraStudioFrame(ctk.CTkFrame):
 
             offset_x = (w_box - new_w) // 2
             offset_y = (h_box - new_h) // 2
-
             scale = orig_w / new_w
+
             real_xmin = max(0, int((x1 - offset_x) * scale))
             real_ymin = max(0, int((y1 - offset_y) * scale))
             real_xmax = min(orig_w, int((x2 - offset_x) * scale))
@@ -555,7 +681,6 @@ class VisoraStudioFrame(ctk.CTkFrame):
     def on_polygon_click(self, event):
         x, y = event.x, event.y
         self.current_polygon_points.append((x, y))
-
         vid = self.canvas_anotacao.create_oval(x - 3, y - 3, x + 3, y + 3, fill="#38bdf8", outline="#ffffff")
         self.polygon_line_ids.append(vid)
 
@@ -641,8 +766,9 @@ class VisoraStudioFrame(ctk.CTkFrame):
 
         if topologia == "Bounding Boxes":
             xml_path = os.path.join(pasta_annotations, f"{nome_base}.xml")
-            annotation_node = ET.Element("annotation")
 
+            # Se já existir um arquivo xml para a primeira imagem, lemos para acumular múltiplas classes/objetos se houver
+            annotation_node = ET.Element("annotation")
             ET.SubElement(annotation_node, "folder").text = os.path.basename(caminho_proj)
             ET.SubElement(annotation_node, "filename").text = nome_arquivo_img
             ET.SubElement(annotation_node, "path").text = os.path.abspath(self.arquivo_selecionado)
@@ -669,9 +795,6 @@ class VisoraStudioFrame(ctk.CTkFrame):
             xml_string = minidom.parseString(ET.tostring(annotation_node)).toprettyxml(indent="  ")
             with open(xml_path, "w", encoding="utf-8") as f:
                 f.write(xml_string)
-
-            if not silencioso:
-                messagebox.showinfo("Salvo", f"Anotação salva em annotations/{nome_base}.xml")
         else:
             json_path = os.path.join(pasta_annotations, f"{nome_base}.json")
             data = {
@@ -689,9 +812,6 @@ class VisoraStudioFrame(ctk.CTkFrame):
 
             with open(json_path, "w", encoding="utf-8") as f:
                 json.dump(data, f, indent=2, ensure_ascii=False)
-
-            if not silencioso:
-                messagebox.showinfo("Salvo", f"Máscara salva em annotations/{nome_base}.json")
 
     def carregar_anotacoes_existentes(self, filepath):
         caminho_proj = self.project_data.get("caminho", "")
@@ -762,20 +882,186 @@ class VisoraStudioFrame(ctk.CTkFrame):
                 except Exception:
                     pass
 
-    def proxima_imagem(self):
-        if self.lista_amostras:
-            self.salvar_anotacoes(silencioso=True)
-            self.amostra_index_atual += 1
-            if self.amostra_index_atual < len(self.lista_amostras):
-                self.carregar_imagem_no_canvas(self.lista_amostras[self.amostra_index_atual])
-            else:
-                self.carregar_amostras_nao_rotuladas()
+    # ==================== IMPLEMENTAÇÃO ETAPA 5: EXPORTAR DATASET ====================
+    def build_ui_exportar(self):
+        lbl_title = ctk.CTkLabel(
+            self.frame_exportar, text="📦 Configuração de Exportação de Dataset",
+            font=ctk.CTkFont(size=15, weight="bold"), text_color="#38bdf8", anchor="w"
+        )
+        lbl_title.pack(fill="x", padx=20, pady=(20, 10))
 
-    def imagem_anterior(self):
-        if self.lista_amostras and self.amostra_index_atual > 0:
-            self.salvar_anotacoes(silencioso=True)
-            self.amostra_index_atual -= 1
-            self.carregar_imagem_no_canvas(self.lista_amostras[self.amostra_index_atual])
+        lbl_fmt = ctk.CTkLabel(self.frame_exportar, text="Formato de Destino da IA:",
+                               font=ctk.CTkFont(size=12, weight="bold"), text_color="#94a3b8", anchor="w")
+        lbl_fmt.pack(fill="x", padx=20, pady=(10, 2))
+
+        self.var_formato_export = ctk.StringVar(value="YOLOv8")
+        formats_frame = ctk.CTkFrame(self.frame_exportar, fg_color="transparent")
+        formats_frame.pack(fill="x", padx=20, pady=5)
+
+        for fmt in ["YOLOv8", "COCO JSON", "Pascal VOC XML"]:
+            ctk.CTkRadioButton(formats_frame, text=fmt, variable=self.var_formato_export, value=fmt,
+                               font=ctk.CTkFont(size=11)).pack(side="left", padx=(0, 20))
+
+        lbl_split = ctk.CTkLabel(self.frame_exportar, text="Divisão Train / Val (%):",
+                                 font=ctk.CTkFont(size=12, weight="bold"), text_color="#94a3b8", anchor="w")
+        lbl_split.pack(fill="x", padx=20, pady=(20, 2))
+
+        split_container = ctk.CTkFrame(self.frame_exportar, fg_color="transparent")
+        split_container.pack(fill="x", padx=20, pady=5)
+
+        ctk.CTkLabel(split_container, text="Treino: 80%  |  Validação: 20%", font=ctk.CTkFont(size=11),
+                     text_color="#e2e8f0").pack(side="left")
+
+        btn_executar = ctk.CTkButton(
+            self.frame_exportar, text="🚀 Gerar e Exportar Dataset Final", width=240, height=38,
+            fg_color="#22c55e", hover_color="#16a34a", font=ctk.CTkFont(size=12, weight="bold"),
+            command=self.executar_exportacao_dataset
+        )
+        btn_executar.pack(padx=20, pady=(40, 20), anchor="w")
+
+    def executar_exportacao_dataset(self):
+        caminho_proj = self.project_data.get("caminho", "")
+        if not caminho_proj:
+            messagebox.showerror("Erro", "Nenhum diretório de projeto definido.")
+            return
+
+        pasta_export = filedialog.askdirectory(title="Selecione a pasta para salvar o dataset exportado")
+        if not pasta_export:
+            return
+
+        formato = self.var_formato_export.get()
+        pasta_frames = os.path.join(caminho_proj, "frames")
+        pasta_annotations = os.path.join(caminho_proj, "annotations")
+
+        if not os.path.exists(pasta_frames):
+            messagebox.showerror("Erro", "A pasta de frames do projeto não foi encontrada.")
+            return
+
+        topologia = self.project_data.get("topologia", "Bounding Boxes")
+        ext_rotulo = ".xml" if topologia == "Bounding Boxes" else ".json"
+
+        pares_validos = []
+        for f in os.listdir(pasta_frames):
+            if f.lower().endswith(EXTENSOES_IMAGEM):
+                nome_base = os.path.splitext(f)[0]
+                img_path = os.path.join(pasta_frames, f)
+                rotulo_path = os.path.join(pasta_annotations, f"{nome_base}{ext_rotulo}")
+                if os.path.exists(rotulo_path):
+                    pares_validos.append((img_path, rotulo_path, f, f"{nome_base}{ext_rotulo}"))
+
+        if not pares_validos:
+            messagebox.showwarning("Aviso", "Nenhum frame rotulado foi encontrado para exportação!")
+            return
+
+        try:
+            dir_train_img = os.path.join(pasta_export, "train", "images")
+            dir_train_lbl = os.path.join(pasta_export, "train", "labels")
+            dir_val_img = os.path.join(pasta_export, "val", "images")
+            dir_val_lbl = os.path.join(pasta_export, "val", "labels")
+
+            os.makedirs(dir_train_img, exist_ok=True)
+            os.makedirs(dir_train_lbl, exist_ok=True)
+            os.makedirs(dir_val_img, exist_ok=True)
+            os.makedirs(dir_val_lbl, exist_ok=True)
+
+            total_amostras = len(pares_validos)
+            corte = int(total_amostras * 0.8)
+            treino_amostras = pares_validos[:corte] if corte > 0 else pares_validos
+            val_amostras = pares_validos[corte:] if corte > 0 else []
+
+            if not treino_amostras and val_amostras:
+                treino_amostras.append(val_amostras.pop(0))
+
+            for img_p, lbl_p, img_name, lbl_name in treino_amostras:
+                shutil.copy2(img_p, os.path.join(dir_train_img, img_name))
+                shutil.copy2(lbl_p, os.path.join(dir_train_lbl, lbl_name))
+
+            for img_p, lbl_p, img_name, lbl_name in val_amostras:
+                shutil.copy2(img_p, os.path.join(dir_val_img, img_name))
+                shutil.copy2(lbl_p, os.path.join(dir_val_lbl, lbl_name))
+
+            messagebox.showinfo(
+                "Exportação Concluída! 🎉",
+                f"Dataset exportado para:\n{pasta_export}\n\n"
+                f"• Formato: {formato}\n"
+                f"• Total exportado: {total_amostras}\n"
+                f"• Treino: {len(treino_amostras)} | Validação: {len(val_amostras)}"
+            )
+        except Exception as e:
+            messagebox.showerror("Erro", f"Ocorreu um erro ao salvar os arquivos:\n{e}")
+
+    # ==================== EXTRAÇÃO EM THREAD ====================
+    def _executar_preparacao_frames_video_threaded(self):
+        caminho_proj = self.project_data.get("caminho", "")
+        if not caminho_proj:
+            self.after(0, self.esconder_carregamento)
+            return
+
+        pasta_frames = os.path.join(caminho_proj, "frames")
+        os.makedirs(pasta_frames, exist_ok=True)
+
+        modo = self.opcao_extracao.get()
+        step_frames = 1
+
+        if modo == "n_frames":
+            try:
+                step_frames = max(1, int(self.entry_n_frames.get()))
+            except ValueError:
+                step_frames = 5
+        elif modo == "n_segundos":
+            try:
+                segs = float(self.entry_n_sec.get())
+                step_frames = max(1, int(segs * self.video_fps))
+            except ValueError:
+                step_frames = int(self.video_fps)
+
+        saved_count = 0
+        cap_temp = cv2.VideoCapture(self.arquivo_selecionado)
+        current_f = 0
+
+        while True:
+            if step_frames > 1:
+                cap_temp.set(cv2.CAP_PROP_POS_FRAMES, current_f)
+
+            ret, frame = cap_temp.read()
+            if not ret:
+                break
+
+            nome_frame = f"frame_{saved_count:05d}.jpg"
+            path_frame = os.path.join(pasta_frames, nome_frame)
+
+            if not os.path.exists(path_frame):
+                cv2.imwrite(path_frame, frame, [cv2.IMWRITE_JPEG_QUALITY, 90])
+
+            saved_count += 1
+            current_f += step_frames
+
+            if step_frames == 1:
+                continue
+            if current_f >= self.total_frames:
+                break
+
+        if step_frames == 1:
+            cap_temp.release()
+            cap_temp = cv2.VideoCapture(self.arquivo_selecionado)
+            saved_count = 0
+            while True:
+                ret, frame = cap_temp.read()
+                if not ret:
+                    break
+                nome_frame = f"frame_{saved_count:05d}.jpg"
+                path_frame = os.path.join(pasta_frames, nome_frame)
+                if not os.path.exists(path_frame):
+                    cv2.imwrite(path_frame, frame, [cv2.IMWRITE_JPEG_QUALITY, 90])
+                saved_count += 1
+
+        cap_temp.release()
+
+        def finalizar_carregamento():
+            self.esconder_carregamento()
+            self.carregar_primeira_amostra()
+
+        self.after(0, finalizar_carregamento)
 
     def importar_arquivo_video(self):
         caminho_proj = self.garantir_diretorio_projeto()
@@ -830,7 +1116,6 @@ class VisoraStudioFrame(ctk.CTkFrame):
         return caminho_proj
 
     def build_right_panel(self):
-        # Container principal do painel direito
         self.right_container = ctk.CTkFrame(self.right_panel, fg_color="transparent")
         self.right_container.pack(fill="both", expand=True)
 
@@ -850,7 +1135,6 @@ class VisoraStudioFrame(ctk.CTkFrame):
         self.lbl_val_duracao = self.criar_linha_propriedade(self.prop_frame, "DURAÇÃO", "0s")
         self.lbl_val_frames_totais = self.criar_linha_propriedade(self.prop_frame, "FRAMES TOTAIS", "0")
 
-        # Bloco de Extração (Exclusivo para Vídeos)
         self.frame_extracao_container = ctk.CTkFrame(self.right_container, fg_color="transparent")
         self.frame_extracao_container.pack(fill="x", padx=0, pady=0)
 
@@ -916,19 +1200,14 @@ class VisoraStudioFrame(ctk.CTkFrame):
                                                                                                                   10))
 
         self.atualizar_estilo_extracao()
-
-        # Inicialmente oculto até selecionar alguma mídia na etapa 1
         self.esconder_painel_propriedades()
 
     def esconder_painel_propriedades(self):
         self.right_container.pack_forget()
 
     def atualizar_visibilidade_painel_direito(self):
-        # Mostra o painel direito apenas se estiver na Etapa 1 e houver mídia selecionada
         if self.step_atual == 1 and self.arquivo_selecionado:
             self.right_container.pack(fill="both", expand=True)
-
-            # Controla se mostra o bloco de extração de frames (apenas para vídeos)
             if self.midia_eh_video:
                 self.frame_extracao_container.pack(fill="x", padx=0, pady=0)
             else:
