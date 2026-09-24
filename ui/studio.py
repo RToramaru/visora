@@ -11,6 +11,16 @@ from xml.dom import minidom
 import customtkinter as ctk
 from tkinter import filedialog, messagebox
 from PIL import Image, ImageTk
+from annotations.storage import save_annotations
+from dataset.exporter import export_dataset
+from media.media_service import extract_frames
+from ml.model_io import export_model, infer_image
+from ml.mobile_sam_training import train_mobile_sam
+from ml.yolo_training import train_yolo
+from ui.panels.model_tools import ModelToolsPanel
+from ui.panels.propagation import PropagationPanel
+from ui.panels.review import ReviewPanel
+from ui.panels.training import TrainingPanel
 
 try:
     warnings.filterwarnings(
@@ -242,11 +252,11 @@ class VisoraStudioFrame(ctk.CTkFrame):
 
         # PAINEL DE PROPAGAÇÃO (Etapa 3)
         self.frame_propagacao = ctk.CTkScrollableFrame(self.display_container, fg_color="#0b0e14", corner_radius=8)
-        self.build_ui_propagacao()
+        self.propagation_panel = PropagationPanel(self, self.frame_propagacao)
 
         # PAINEL DE REVISAR (Etapa 4)
         self.frame_revisar = ctk.CTkFrame(self.display_container, fg_color="#0b0e14", corner_radius=8)
-        self.build_ui_revisar()
+        self.review_panel = ReviewPanel(self, self.frame_revisar)
 
         # PAINEL DE EXPORTAR DATASET (Etapa 5)
         self.frame_exportar = ctk.CTkFrame(self.display_container, fg_color="#0b0e14", corner_radius=8)
@@ -254,15 +264,16 @@ class VisoraStudioFrame(ctk.CTkFrame):
 
         # PAINEL DE TREINAMENTO (Etapa 6)
         self.frame_treinamento = ctk.CTkFrame(self.display_container, fg_color="#0b0e14", corner_radius=8)
-        self.build_ui_treinamento()
+        self.training_panel = TrainingPanel(self, self.frame_treinamento)
 
         # PAINEL DE VISUALIZAÇÃO DO MODELO (Etapa 7)
         self.frame_visualizar_modelo = ctk.CTkFrame(self.display_container, fg_color="#0b0e14", corner_radius=8)
-        self.build_ui_visualizar_modelo()
 
         # PAINEL DE EXPORTAÇÃO DO MODELO (Etapa 8)
         self.frame_exportar_modelo = ctk.CTkFrame(self.display_container, fg_color="#0b0e14", corner_radius=8)
-        self.build_ui_exportar_modelo()
+        self.model_tools_panel = ModelToolsPanel(
+            self, self.frame_visualizar_modelo, self.frame_exportar_modelo
+        )
 
         # PAINEL OVERLAY DE CARREGAMENTO
         self.overlay_loading = ctk.CTkFrame(self.display_container, fg_color="#0b0e14", corner_radius=8)
@@ -557,99 +568,6 @@ class VisoraStudioFrame(ctk.CTkFrame):
             self.render_action_bar_etapa8()
             self.frame_exportar_modelo.pack(fill="both", expand=True, padx=20, pady=20)
 
-    def build_ui_visualizar_modelo(self):
-        ctk.CTkLabel(
-            self.frame_visualizar_modelo, text="Visualizar resultado do treinamento",
-            font=ctk.CTkFont(size=15, weight="bold"), text_color="#22c55e", anchor="w"
-        ).pack(fill="x", padx=20, pady=(20, 10))
-
-        controles = ctk.CTkFrame(self.frame_visualizar_modelo, fg_color="#111622", corner_radius=6)
-        controles.pack(fill="x", padx=20, pady=10)
-        controles.columnconfigure(1, weight=1)
-
-        ctk.CTkLabel(controles, text="Modelo treinado:", text_color="#e2e8f0").grid(
-            row=0, column=0, padx=15, pady=10, sticky="w"
-        )
-        self.entry_modelo_visualizacao = ctk.CTkEntry(controles, height=28, fg_color="#080a0f")
-        self.entry_modelo_visualizacao.grid(row=0, column=1, padx=10, pady=10, sticky="ew")
-        ctk.CTkButton(controles, text="Selecionar", width=110, height=28,
-                      command=self.selecionar_modelo_visualizacao).grid(row=0, column=2, padx=10, pady=10)
-
-        ctk.CTkLabel(controles, text="Tipo de modelo:", text_color="#e2e8f0").grid(
-            row=1, column=0, padx=15, pady=10, sticky="w"
-        )
-        self.var_tipo_visualizacao = ctk.StringVar(
-            value="MobileSAM" if self.project_data.get("topologia", "Bounding Boxes") != "Bounding Boxes" else "YOLO"
-        )
-        ctk.CTkOptionMenu(
-            controles, variable=self.var_tipo_visualizacao, values=["YOLO", "MobileSAM"], width=150
-        ).grid(row=1, column=1, padx=10, pady=10, sticky="w")
-
-        ctk.CTkLabel(controles, text="Imagem para testar:", text_color="#e2e8f0").grid(
-            row=2, column=0, padx=15, pady=10, sticky="w"
-        )
-        self.entry_imagem_visualizacao = ctk.CTkEntry(controles, height=28, fg_color="#080a0f")
-        self.entry_imagem_visualizacao.grid(row=2, column=1, padx=10, pady=10, sticky="ew")
-        ctk.CTkButton(controles, text="Selecionar", width=110, height=28,
-                      command=self.selecionar_imagem_visualizacao).grid(row=2, column=2, padx=10, pady=10)
-
-        ctk.CTkButton(
-            controles, text="Executar inferência", width=180, height=34,
-            fg_color="#22c55e", hover_color="#16a34a", command=self.executar_inferencia_modelo
-        ).grid(row=3, column=1, padx=10, pady=(5, 15), sticky="w")
-
-        self.lbl_resultado_visualizacao = ctk.CTkLabel(
-            self.frame_visualizar_modelo, text="Selecione um modelo e uma imagem para visualizar as detecções.",
-            text_color="#94a3b8"
-        )
-        self.lbl_resultado_visualizacao.pack(fill="both", expand=True, padx=20, pady=20)
-
-    def build_ui_exportar_modelo(self):
-        ctk.CTkLabel(
-            self.frame_exportar_modelo, text="Exportar modelo treinado",
-            font=ctk.CTkFont(size=15, weight="bold"), text_color="#f59e0b", anchor="w"
-        ).pack(fill="x", padx=20, pady=(20, 10))
-
-        controles = ctk.CTkFrame(self.frame_exportar_modelo, fg_color="#111622", corner_radius=6)
-        controles.pack(fill="x", padx=20, pady=10)
-        controles.columnconfigure(1, weight=1)
-
-        ctk.CTkLabel(controles, text="Modelo treinado:", text_color="#e2e8f0").grid(
-            row=0, column=0, padx=15, pady=10, sticky="w"
-        )
-        self.entry_modelo_exportacao = ctk.CTkEntry(controles, height=28, fg_color="#080a0f")
-        self.entry_modelo_exportacao.grid(row=0, column=1, padx=10, pady=10, sticky="ew")
-        ctk.CTkButton(controles, text="Selecionar", width=110, height=28,
-                      command=self.selecionar_modelo_exportacao).grid(row=0, column=2, padx=10, pady=10)
-
-        ctk.CTkLabel(controles, text="Formato de saída:", text_color="#e2e8f0").grid(
-            row=1, column=0, padx=15, pady=10, sticky="w"
-        )
-        self.var_formato_modelo = ctk.StringVar(value="onnx")
-        ctk.CTkOptionMenu(
-            controles, variable=self.var_formato_modelo,
-            values=["onnx", "pt", "pth", "torchscript", "engine", "coreml", "tflite"], width=180
-        ).grid(row=1, column=1, padx=10, pady=10, sticky="w")
-
-        ctk.CTkLabel(controles, text="Pasta de destino:", text_color="#e2e8f0").grid(
-            row=2, column=0, padx=15, pady=10, sticky="w"
-        )
-        self.entry_destino_modelo = ctk.CTkEntry(controles, height=28, fg_color="#080a0f")
-        self.entry_destino_modelo.grid(row=2, column=1, padx=10, pady=10, sticky="ew")
-        ctk.CTkButton(controles, text="Selecionar", width=110, height=28,
-                      command=self.selecionar_destino_modelo).grid(row=2, column=2, padx=10, pady=10)
-
-        ctk.CTkButton(
-            controles, text="Exportar modelo", width=180, height=34,
-            fg_color="#f59e0b", hover_color="#d97706", command=self.executar_exportacao_modelo
-        ).grid(row=3, column=1, padx=10, pady=(5, 15), sticky="w")
-
-        self.lbl_status_exportacao_modelo = ctk.CTkLabel(
-            self.frame_exportar_modelo, text="O formato .pt mantém o checkpoint original; os demais usam a exportação do Ultralytics.",
-            text_color="#94a3b8", anchor="w", justify="left"
-        )
-        self.lbl_status_exportacao_modelo.pack(fill="x", padx=20, pady=10)
-
     def selecionar_modelo_visualizacao(self):
         caminho = filedialog.askopenfilename(
             title="Selecione o modelo treinado",
@@ -690,37 +608,7 @@ class VisoraStudioFrame(ctk.CTkFrame):
 
     def _executar_inferencia_modelo_threaded(self, caminho_modelo, caminho_imagem, tipo_modelo):
         try:
-            if tipo_modelo == "MobileSAM":
-                imagem_rgb = cv2.cvtColor(cv2.imread(caminho_imagem), cv2.COLOR_BGR2RGB)
-                modelo = build_sam_vit_t(checkpoint=caminho_modelo)
-                modelo.to("cuda" if torch.cuda.is_available() else "cpu")
-                modelo.eval()
-                with torch.inference_mode():
-                    mascaras = SamAutomaticMaskGenerator(
-                        modelo,
-                        points_per_side=8,
-                        points_per_batch=8,
-                        crop_n_layers=0,
-                        min_mask_region_area=100
-                    ).generate(imagem_rgb)
-                resultado_rgb = imagem_rgb.copy()
-                for indice, mascara in enumerate(mascaras):
-                    cor = np.array((
-                        (37 * (indice + 3)) % 255,
-                        (97 * (indice + 5)) % 255,
-                        (173 * (indice + 7)) % 255
-                    ), dtype=np.uint8)
-                    area = mascara.get("segmentation")
-                    if area is not None:
-                        resultado_rgb[area] = (
-                            resultado_rgb[area].astype(np.float32) * 0.45 + cor * 0.55
-                        ).astype(np.uint8)
-                imagem_rgb = resultado_rgb
-            else:
-                modelo = YOLO(caminho_modelo)
-                resultado = modelo(caminho_imagem, verbose=False)[0]
-                imagem_rgb = cv2.cvtColor(resultado.plot(), cv2.COLOR_BGR2RGB)
-            imagem = Image.fromarray(imagem_rgb)
+            imagem = infer_image(caminho_modelo, caminho_imagem, tipo_modelo)
             self.after(0, lambda: self._mostrar_resultado_inferencia(imagem))
         except Exception as erro:
             erro_msg = str(erro)
@@ -755,8 +643,12 @@ class VisoraStudioFrame(ctk.CTkFrame):
             self.entry_destino_modelo.insert(0, caminho)
 
     def executar_exportacao_modelo(self):
-        if not ULTRALYTICS_DISPONIVEL:
+        tipo_modelo = self.var_tipo_exportacao_modelo.get()
+        if tipo_modelo == "YOLO" and not ULTRALYTICS_DISPONIVEL:
             messagebox.showerror("Erro", "A biblioteca Ultralytics não está instalada no ambiente.")
+            return
+        if tipo_modelo == "MobileSAM" and not MOBILE_SAM_DISPONIVEL:
+            messagebox.showerror("Erro", "A biblioteca MobileSAM não está instalada no ambiente.")
             return
         caminho_modelo = self.entry_modelo_exportacao.get().strip()
         pasta_destino = self.entry_destino_modelo.get().strip()
@@ -768,31 +660,12 @@ class VisoraStudioFrame(ctk.CTkFrame):
         self.mostrar_carregamento(f"Exportando modelo para {formato}...")
         threading.Thread(
             target=self._executar_exportacao_modelo_threaded,
-            args=(caminho_modelo, pasta_destino, formato), daemon=True
+            args=(caminho_modelo, pasta_destino, formato, tipo_modelo), daemon=True
         ).start()
 
-    def _executar_exportacao_modelo_threaded(self, caminho_modelo, pasta_destino, formato):
+    def _executar_exportacao_modelo_threaded(self, caminho_modelo, pasta_destino, formato, tipo_modelo):
         try:
-            nome_base = os.path.splitext(os.path.basename(caminho_modelo))[0]
-            if formato in ("pt", "pth"):
-                destino = os.path.join(pasta_destino, f"{nome_base}.{formato}")
-                shutil.copy2(caminho_modelo, destino)
-            else:
-                modelo = YOLO(caminho_modelo)
-                resultado = modelo.export(format=formato)
-                origem_exportada = os.fspath(resultado) if resultado else ""
-                if not os.path.exists(origem_exportada):
-                    origem_exportada = os.path.splitext(caminho_modelo)[0] + f".{formato}"
-                if not os.path.exists(origem_exportada):
-                    raise FileNotFoundError(
-                        f"O Ultralytics não retornou o arquivo exportado para o formato {formato}."
-                    )
-
-                destino = os.path.join(pasta_destino, f"{nome_base}.{formato}")
-                if os.path.isdir(origem_exportada):
-                    shutil.copytree(origem_exportada, destino, dirs_exist_ok=True)
-                else:
-                    shutil.copy2(origem_exportada, destino)
+            destino = export_model(caminho_modelo, pasta_destino, formato, tipo_modelo)
             self.after(0, lambda: messagebox.showinfo(
                 "Sucesso", f"Modelo exportado com sucesso para:\n{destino}"
             ))
@@ -801,93 +674,6 @@ class VisoraStudioFrame(ctk.CTkFrame):
             self.after(0, lambda: messagebox.showerror("Erro", f"Falha ao exportar o modelo:\n{erro_msg}"))
         finally:
             self.after(0, self.esconder_carregamento)
-
-    # ==================== IMPLEMENTAÇÃO ETAPA 3: PROPAGAÇÃO MULTI-AMOSTRA ====================
-    def build_ui_propagacao(self):
-        lbl_title = ctk.CTkLabel(
-            self.frame_propagacao, text="⚡ Escolha o Método de Propagação Baseado nas suas Amostras",
-            font=ctk.CTkFont(size=15, weight="bold"), text_color="#38bdf8", anchor="w"
-        )
-        lbl_title.pack(fill="x", padx=10, pady=(15, 5))
-
-        lbl_desc = ctk.CTkLabel(
-            self.frame_propagacao,
-            text="As imagens que você rotulou na etapa anterior servirão de base para preencher automaticamente os quadros restantes do seu dataset.",
-            font=ctk.CTkFont(size=12), text_color="#94a3b8", justify="left", wraplength=700
-        )
-        lbl_desc.pack(fill="x", padx=10, pady=(0, 15))
-
-        # --- CARTÃO MÉTODO 1 ---
-        card_molde = ctk.CTkFrame(self.frame_propagacao, fg_color="#111622", border_width=1, border_color="#1e293b",
-                                  corner_radius=6)
-        card_molde.pack(fill="x", padx=10, pady=6)
-
-        lbl_m1 = ctk.CTkLabel(card_molde, text="Propagação por Interpolagem / Clonagem de Referências",
-                              font=ctk.CTkFont(size=12, weight="bold"), text_color="#e2e8f0")
-        lbl_m1.pack(anchor="w", padx=15, pady=(12, 4))
-
-        desc_m1 = ctk.CTkLabel(
-            card_molde,
-            text="• Como funciona: Utiliza as anotações feitas nas suas amostras-chave e as replica/distribui sequencialmente para preencher os frames que estão vazios no intervalo.\n• Ideal para: Cenas estáticas ou com pouca movimentação onde a referência manual serve de molde fixo.",
-            font=ctk.CTkFont(size=11), text_color="#94a3b8", justify="left", wraplength=680
-        )
-        desc_m1.pack(anchor="w", padx=15, pady=(0, 8))
-
-        btn_molde = ctk.CTkButton(
-            card_molde, text="Executar Interpolagem", width=180, height=32,
-            fg_color="#1e293b", hover_color="#334155", font=ctk.CTkFont(size=11, weight="bold"),
-            command=lambda: self.executar_modelo_propagacao("molde")
-        )
-        btn_molde.pack(anchor="w", padx=15, pady=(0, 12))
-
-        # --- CARTÃO MÉTODO 2 ---
-        card_opencv = ctk.CTkFrame(self.frame_propagacao, fg_color="#111622", border_width=1, border_color="#1e293b",
-                                   corner_radius=6)
-        card_opencv.pack(fill="x", padx=10, pady=6)
-
-        lbl_m2 = ctk.CTkLabel(card_opencv, text="Rastreamento Temporal OpenCV (Multi-Tracking)",
-                              font=ctk.CTkFont(size=12, weight="bold"), text_color="#e2e8f0")
-        lbl_m2.pack(anchor="w", padx=15, pady=(12, 4))
-
-        desc_m2 = ctk.CTkLabel(
-            card_opencv,
-            text="• Como funciona: Emprega algoritmos tradicionais de visão computacional para seguir os pixels e contornos das anotações quadro a quadro ao longo do tempo.\n• Ideal para: Vídeos fluidos onde os objetos possuem trajetória contínua e previsível.",
-            font=ctk.CTkFont(size=11), text_color="#94a3b8", justify="left", wraplength=680
-        )
-        desc_m2.pack(anchor="w", padx=15, pady=(0, 8))
-
-        btn_opencv = ctk.CTkButton(
-            card_opencv, text="Executar OpenCV Tracking", width=180, height=32,
-            fg_color="#1e293b", hover_color="#334155", font=ctk.CTkFont(size=11, weight="bold"),
-            command=lambda: self.executar_modelo_propagacao("opencv")
-        )
-        btn_opencv.pack(anchor="w", padx=15, pady=(0, 12))
-
-        if self.project_data.get("topologia", "Bounding Boxes") == "Bounding Boxes":
-            # --- CARTÃO MÉTODO 3 ---
-            card_yolo = ctk.CTkFrame(self.frame_propagacao, fg_color="#111622", border_width=1,
-                                     border_color="#2563eb", corner_radius=6)
-            card_yolo.pack(fill="x", padx=10, pady=6)
-
-            lbl_m3 = ctk.CTkLabel(
-                card_yolo, text="Modelo Ultralytics YOLO (Treinamento Rápido / Inferência Inteligente)",
-                font=ctk.CTkFont(size=12, weight="bold"), text_color="#38bdf8"
-            )
-            lbl_m3.pack(anchor="w", padx=15, pady=(12, 4))
-
-            desc_m3 = ctk.CTkLabel(
-                card_yolo,
-                text="• Como funciona: Utiliza inteligência artificial avançada baseada em deep learning (YOLO) para analisar todas as imagens do dataset e detectar os objetos automaticamente com alta precisão.\n• Ideal para: Datasets complexos, com múltiplos objetos dinâmicos, garantindo detecção inteligente e automatizada em larga escala.",
-                font=ctk.CTkFont(size=11), text_color="#94a3b8", justify="left", wraplength=680
-            )
-            desc_m3.pack(anchor="w", padx=15, pady=(0, 8))
-
-            btn_yolo = ctk.CTkButton(
-                card_yolo, text="Executar YOLO AI", width=180, height=32,
-                fg_color="#2563eb", hover_color="#1d4ed8", font=ctk.CTkFont(size=11, weight="bold"),
-                command=lambda: self.executar_modelo_propagacao("yolo")
-            )
-            btn_yolo.pack(anchor="w", padx=15, pady=(0, 12))
 
     def executar_modelo_propagacao(self, metodo):
         caminho_proj = self.project_data.get("caminho", "")
@@ -1016,32 +802,6 @@ class VisoraStudioFrame(ctk.CTkFrame):
                 self.after(0, _finalizar)
 
         threading.Thread(target=_processar, daemon=True).start()
-
-    # ==================== IMPLEMENTAÇÃO ETAPA 4: REVISÃO ====================
-    def build_ui_revisar(self):
-        self.rev_left_frame = ctk.CTkScrollableFrame(self.frame_revisar, width=340, fg_color="#111622", corner_radius=6)
-        self.rev_left_frame.pack(side="left", fill="y", padx=10, pady=10)
-
-        self.rev_right_frame = ctk.CTkFrame(self.frame_revisar, fg_color="#111622", corner_radius=6)
-        self.rev_right_frame.pack(side="right", fill="both", expand=True, padx=10, pady=10)
-
-        lbl_prev_title = ctk.CTkLabel(self.rev_right_frame, text="🔍 INSPEÇÃO VISUAL DA AMOSTRA",
-                                      font=ctk.CTkFont(size=12, weight="bold"), text_color="#38bdf8")
-        lbl_prev_title.pack(pady=10)
-
-        self.rev_canvas = ctk.CTkCanvas(self.rev_right_frame, bg="#05070a", highlightthickness=0)
-        self.rev_canvas.pack(fill="both", expand=True, padx=10, pady=10)
-
-        self.rev_info_lbl = ctk.CTkLabel(self.rev_right_frame, text="Selecione um frame ao lado para auditar.",
-                                         font=ctk.CTkFont(size=11), text_color="#94a3b8")
-        self.rev_info_lbl.pack(pady=5)
-
-        self.btn_excluir_lote = ctk.CTkButton(
-            self.rev_right_frame, text="🗑️ Remover o(s) selecionado(s)", width=300, height=35,
-            fg_color="#ef4444", hover_color="#dc2626", font=ctk.CTkFont(size=12, weight="bold"),
-            command=self.excluir_anotacoes_em_lote
-        )
-        self.btn_excluir_lote.pack(pady=(5, 15))
 
     def popular_revisao_visual(self):
         for w in self.rev_left_frame.winfo_children():
@@ -1376,79 +1136,20 @@ class VisoraStudioFrame(ctk.CTkFrame):
             )
             return
 
-        pasta_annotations = os.path.join(caminho_proj, "annotations")
         try:
-            os.makedirs(pasta_annotations, exist_ok=True)
+            output_path = save_annotations(
+                project_path=caminho_proj,
+                image_path=self.arquivo_selecionado,
+                annotations=self.annotations,
+                topologia=self.project_data.get("topologia", "Bounding Boxes"),
+                image_size=self.pil_canvas_img.size,
+            )
         except OSError as erro:
             messagebox.showerror(
                 "Erro ao salvar anotação",
-                f"Não foi possível criar a pasta de anotações:\n{erro}"
+                f"Não foi possível salvar a anotação:\n{erro}"
             )
             return
-
-        nome_arquivo_img = os.path.basename(self.arquivo_selecionado)
-        nome_base = os.path.splitext(nome_arquivo_img)[0]
-        topologia = self.project_data.get("topologia", "Bounding Boxes")
-
-        if not self.annotations:
-            for ext in [".xml", ".json"]:
-                p = os.path.join(pasta_annotations, f"{nome_base}{ext}")
-                if os.path.exists(p):
-                    try:
-                        os.remove(p)
-                    except Exception:
-                        pass
-            return
-
-        largura_orig, altura_orig = self.pil_canvas_img.size
-
-        if topologia == "Bounding Boxes":
-            xml_path = os.path.join(pasta_annotations, f"{nome_base}.xml")
-            annotation_node = ET.Element("annotation")
-
-            ET.SubElement(annotation_node, "folder").text = os.path.basename(caminho_proj)
-            ET.SubElement(annotation_node, "filename").text = nome_arquivo_img
-            ET.SubElement(annotation_node, "path").text = os.path.abspath(self.arquivo_selecionado)
-
-            size_node = ET.SubElement(annotation_node, "size")
-            ET.SubElement(size_node, "width").text = str(largura_orig)
-            ET.SubElement(size_node, "height").text = str(altura_orig)
-            ET.SubElement(size_node, "depth").text = "3"
-
-            for ann in self.annotations:
-                if ann.get("type") == "bbox":
-                    object_node = ET.SubElement(annotation_node, "object")
-                    ET.SubElement(object_node, "name").text = ann["label"]
-                    ET.SubElement(object_node, "pose").text = "Unspecified"
-                    ET.SubElement(object_node, "truncated").text = "0"
-                    ET.SubElement(object_node, "difficult").text = "0"
-
-                    bndbox_node = ET.SubElement(object_node, "bndbox")
-                    ET.SubElement(bndbox_node, "xmin").text = str(ann["xmin"])
-                    ET.SubElement(bndbox_node, "ymin").text = str(ann["ymin"])
-                    ET.SubElement(bndbox_node, "xmax").text = str(ann["xmax"])
-                    ET.SubElement(bndbox_node, "ymax").text = str(ann["ymax"])
-
-            xml_string = minidom.parseString(ET.tostring(annotation_node)).toprettyxml(indent="  ")
-            with open(xml_path, "w", encoding="utf-8") as f:
-                f.write(xml_string)
-        else:
-            json_path = os.path.join(pasta_annotations, f"{nome_base}.json")
-            data = {
-                "version": "5.0.1", "flags": {}, "shapes": [],
-                "imagePath": nome_arquivo_img, "imageData": None,
-                "imageHeight": altura_orig, "imageWidth": largura_orig
-            }
-
-            for ann in self.annotations:
-                if ann.get("type") == "polygon":
-                    data["shapes"].append({
-                        "label": ann["label"], "points": ann["points"],
-                        "group_id": None, "shape_type": "polygon", "flags": {}
-                    })
-
-            with open(json_path, "w", encoding="utf-8") as f:
-                json.dump(data, f, indent=2, ensure_ascii=False)
 
     def carregar_anotacoes_existentes(self, filepath):
         caminho_proj = self.project_data.get("caminho", "")
@@ -1556,275 +1257,31 @@ class VisoraStudioFrame(ctk.CTkFrame):
         )
         btn_executar.pack(padx=20, pady=(40, 20), anchor="w")
 
-    def _carregar_anotacoes_para_exportacao(self, rotulo_path, img_path):
-        largura, altura = Image.open(img_path).size
-        anotacoes = []
-
-        if rotulo_path.lower().endswith(".xml"):
-            root = ET.parse(rotulo_path).getroot()
-            for objeto in root.findall("object"):
-                caixa = objeto.find("bndbox")
-                if caixa is None:
-                    continue
-                anotacoes.append({
-                    "label": objeto.findtext("name", default="Objeto"),
-                    "type": "bbox",
-                    "bbox": [
-                        float(caixa.findtext("xmin", default="0")),
-                        float(caixa.findtext("ymin", default="0")),
-                        float(caixa.findtext("xmax", default="0")),
-                        float(caixa.findtext("ymax", default="0"))
-                    ]
-                })
-        else:
-            with open(rotulo_path, "r", encoding="utf-8") as arquivo:
-                dados = json.load(arquivo)
-            for forma in dados.get("shapes", []):
-                pontos = [[float(x), float(y)] for x, y in forma.get("points", [])]
-                if not pontos:
-                    continue
-                anotacoes.append({
-                    "label": forma.get("label", "Objeto"),
-                    "type": "polygon",
-                    "points": pontos,
-                    "bbox": [
-                        min(ponto[0] for ponto in pontos),
-                        min(ponto[1] for ponto in pontos),
-                        max(ponto[0] for ponto in pontos),
-                        max(ponto[1] for ponto in pontos)
-                    ]
-                })
-
-        return anotacoes, largura, altura
-
-    def _serializar_anotacao_exportada(self, formato, anotacoes, nome_imagem, largura, altura, classes):
-        if formato == "YOLOv8":
-            linhas = []
-            for anotacao in anotacoes:
-                classe_id = classes[anotacao["label"]]
-                if anotacao["type"] == "polygon":
-                    pontos = anotacao["points"]
-                    coordenadas = " ".join(
-                        f"{max(0, min(1, x / largura)):.6f} {max(0, min(1, y / altura)):.6f}"
-                        for x, y in pontos
-                    )
-                    linhas.append(f"{classe_id} {coordenadas}")
-                    continue
-
-                xmin, ymin, xmax, ymax = anotacao["bbox"]
-                centro_x = ((xmin + xmax) / 2) / largura
-                centro_y = ((ymin + ymax) / 2) / altura
-                largura_caixa = (xmax - xmin) / largura
-                altura_caixa = (ymax - ymin) / altura
-                linhas.append(
-                    f"{classe_id} {centro_x:.6f} {centro_y:.6f} "
-                    f"{largura_caixa:.6f} {altura_caixa:.6f}"
-                )
-            return "\n".join(linhas) + ("\n" if linhas else "")
-
-        if formato == "COCO JSON":
-            categorias = [{"id": classe_id, "name": nome} for nome, classe_id in classes.items()]
-            objetos = []
-            for indice, anotacao in enumerate(anotacoes, start=1):
-                xmin, ymin, xmax, ymax = anotacao["bbox"]
-                objeto = {
-                    "id": indice,
-                    "image_id": 1,
-                    "category_id": classes[anotacao["label"]],
-                    "bbox": [xmin, ymin, xmax - xmin, ymax - ymin],
-                    "area": max(0, xmax - xmin) * max(0, ymax - ymin),
-                    "iscrowd": 0
-                }
-                if anotacao["type"] == "polygon":
-                    objeto["segmentation"] = [[
-                        coordenada for ponto in anotacao["points"] for coordenada in ponto
-                    ]]
-                objetos.append(objeto)
-            return json.dumps({
-                "images": [{"id": 1, "file_name": nome_imagem, "width": largura, "height": altura}],
-                "annotations": objetos,
-                "categories": categorias
-            }, indent=2, ensure_ascii=False)
-
-        annotation_node = ET.Element("annotation")
-        ET.SubElement(annotation_node, "filename").text = nome_imagem
-        size_node = ET.SubElement(annotation_node, "size")
-        ET.SubElement(size_node, "width").text = str(largura)
-        ET.SubElement(size_node, "height").text = str(altura)
-        ET.SubElement(size_node, "depth").text = "3"
-        for anotacao in anotacoes:
-            xmin, ymin, xmax, ymax = anotacao["bbox"]
-            objeto = ET.SubElement(annotation_node, "object")
-            ET.SubElement(objeto, "name").text = anotacao["label"]
-            caixa = ET.SubElement(objeto, "bndbox")
-            for nome, valor in (("xmin", xmin), ("ymin", ymin), ("xmax", xmax), ("ymax", ymax)):
-                ET.SubElement(caixa, nome).text = str(int(valor))
-        return minidom.parseString(ET.tostring(annotation_node)).toprettyxml(indent="  ")
-
     def executar_exportacao_dataset(self):
         caminho_proj = self.project_data.get("caminho", "")
-        if not caminho_proj:
-            messagebox.showerror("Erro", "Nenhum diretório de projeto definido.")
+        if not caminho_proj or not os.path.isdir(caminho_proj):
+            messagebox.showerror("Erro", "Nenhum diretório de projeto válido foi definido.")
             return
 
         pasta_export = filedialog.askdirectory(title="Selecione a pasta para salvar o dataset exportado")
         if not pasta_export:
             return
 
-        formato = self.var_formato_export.get()
-        pasta_frames = os.path.join(caminho_proj, "frames")
-        diretorio_busca = pasta_frames if os.path.exists(pasta_frames) else caminho_proj
-        pasta_annotations = os.path.join(caminho_proj, "annotations")
-
-        if not os.path.exists(diretorio_busca):
-            messagebox.showerror("Erro", "O diretório das imagens do projeto não foi encontrado.")
-            return
-
-        extensoes_origem = (".xml", ".json")
-        extensao_destino = {"YOLOv8": ".txt", "COCO JSON": ".json", "Pascal VOC XML": ".xml"}[formato]
-
-        pares_validos = []
-        for f in os.listdir(diretorio_busca):
-            if f.lower().endswith(EXTENSOES_IMAGEM):
-                nome_base = os.path.splitext(f)[0]
-                img_path = os.path.join(diretorio_busca, f)
-                rotulo_path = next(
-                    (os.path.join(pasta_annotations, f"{nome_base}{ext}") for ext in extensoes_origem
-                     if os.path.exists(os.path.join(pasta_annotations, f"{nome_base}{ext}"))),
-                    None
-                )
-                if rotulo_path:
-                    pares_validos.append((img_path, rotulo_path, f, f"{nome_base}{extensao_destino}"))
-
-        if not pares_validos:
-            messagebox.showwarning("Aviso", "Nenhum frame rotulado foi encontrado para exportação!")
-            return
-
         try:
-            anotacoes_por_amostra = []
-            nomes_classes = set()
-            for img_p, lbl_p, img_name, lbl_name in pares_validos:
-                anotacoes, largura, altura = self._carregar_anotacoes_para_exportacao(lbl_p, img_p)
-                anotacoes_por_amostra.append((img_p, img_name, lbl_name, anotacoes, largura, altura))
-                nomes_classes.update(anotacao["label"] for anotacao in anotacoes)
-            classes = {nome: indice for indice, nome in enumerate(sorted(nomes_classes))}
-
-            dir_train_img = os.path.join(pasta_export, "train", "images")
-            dir_train_lbl = os.path.join(pasta_export, "train", "labels")
-            dir_val_img = os.path.join(pasta_export, "val", "images")
-            dir_val_lbl = os.path.join(pasta_export, "val", "labels")
-
-            os.makedirs(dir_train_img, exist_ok=True)
-            os.makedirs(dir_train_lbl, exist_ok=True)
-            os.makedirs(dir_val_img, exist_ok=True)
-            os.makedirs(dir_val_lbl, exist_ok=True)
-
-            total_amostras = len(pares_validos)
-            corte = int(total_amostras * 0.8)
-            treino_amostras = pares_validos[:corte] if corte > 0 else pares_validos
-            val_amostras = pares_validos[corte:] if corte > 0 else []
-
-            if not treino_amostras and val_amostras:
-                treino_amostras.append(val_amostras.pop(0))
-
-            treino_nomes = {img_name for _, _, img_name, _ in treino_amostras}
-            for img_p, img_name, lbl_name, anotacoes, largura, altura in anotacoes_por_amostra:
-                destino_img = dir_train_img if img_name in treino_nomes else dir_val_img
-                destino_lbl = dir_train_lbl if img_name in treino_nomes else dir_val_lbl
-                shutil.copy2(img_p, os.path.join(destino_img, img_name))
-                conteudo = self._serializar_anotacao_exportada(
-                    formato, anotacoes, img_name, largura, altura, classes
-                )
-                with open(os.path.join(destino_lbl, lbl_name), "w", encoding="utf-8") as arquivo:
-                    arquivo.write(conteudo)
-
+            resumo = export_dataset(caminho_proj, pasta_export, self.var_formato_export.get())
             messagebox.showinfo(
-                "Exportação Concluída! 🎉",
-                f"Dataset exportado para:\n{pasta_export}\n\n"
-                f"• Formato: {formato}\n"
-                f"• Total exportado: {total_amostras}\n"
-                f"• Treino: {len(treino_amostras)} | Validação: {len(val_amostras)}"
+                "Exportação Concluída!",
+                f"Dataset exportado para:\n{resumo['path']}\n\n"
+                f"Formato: {resumo['format']}\n"
+                f"Total: {resumo['total']}\n"
+                f"Treino: {resumo['train']} | Validação: {resumo['val']}"
             )
-        except Exception as e:
-            messagebox.showerror("Erro", f"Ocorreu um erro ao salvar os arquivos:\n{e}")
+        except ValueError as erro:
+            messagebox.showwarning("Aviso", str(erro))
+        except (OSError, json.JSONDecodeError, ET.ParseError) as erro:
+            messagebox.showerror("Erro", f"Ocorreu um erro ao exportar o dataset:\n{erro}")
 
     # ==================== IMPLEMENTAÇÃO ETAPA 6: TREINAMENTO DO MODELO ====================
-    def build_ui_treinamento(self):
-        lbl_title = ctk.CTkLabel(
-            self.frame_treinamento, text="🤖 Treinamento do Modelo",
-            font=ctk.CTkFont(size=15, weight="bold"), text_color="#a855f7", anchor="w"
-        )
-        lbl_title.pack(fill="x", padx=20, pady=(20, 10))
-
-        topologia = self.project_data.get("topologia", "Bounding Boxes")
-        modelo_nome = "YOLO (Bounding Boxes)" if topologia == "Bounding Boxes" else "Mobile SAM (Polígonos / Segmentação)"
-
-        lbl_desc = ctk.CTkLabel(
-            self.frame_treinamento,
-            text=f"A topologia selecionada é '{topologia}'. O treinamento utilizará o algoritmo: {modelo_nome}.",
-            font=ctk.CTkFont(size=12), text_color="#94a3b8", anchor="w"
-        )
-        lbl_desc.pack(fill="x", padx=20, pady=(0, 15))
-
-        # Configurações básicas
-        params_frame = ctk.CTkFrame(self.frame_treinamento, fg_color="#111622", corner_radius=6)
-        params_frame.pack(fill="x", padx=20, pady=10)
-
-        lbl_epochs = ctk.CTkLabel(params_frame, text="Número de Épocas:", font=ctk.CTkFont(size=11, weight="bold"),
-                                  text_color="#e2e8f0")
-        lbl_epochs.grid(row=0, column=0, padx=15, pady=10, sticky="w")
-
-        self.entry_epochs = ctk.CTkEntry(params_frame, width=80, height=28, fg_color="#080a0f")
-        self.entry_epochs.insert(0, "50")
-        self.entry_epochs.grid(row=0, column=1, padx=10, pady=10, sticky="w")
-
-        self.var_modo_treinamento = ctk.StringVar(value="novo")
-        ctk.CTkLabel(params_frame, text="Modo:", font=ctk.CTkFont(size=11, weight="bold"),
-                     text_color="#e2e8f0").grid(row=1, column=0, padx=15, pady=10, sticky="w")
-        ctk.CTkRadioButton(
-            params_frame, text="Novo treinamento", variable=self.var_modo_treinamento, value="novo",
-            command=self.atualizar_modo_treinamento
-        ).grid(row=1, column=1, padx=10, pady=10, sticky="w")
-        ctk.CTkRadioButton(
-            params_frame, text="Continuar treinamento", variable=self.var_modo_treinamento, value="continuar",
-            command=self.atualizar_modo_treinamento
-        ).grid(row=1, column=2, padx=10, pady=10, sticky="w")
-
-        self.entry_pasta_treinamento = ctk.CTkEntry(
-            params_frame, width=360, height=28, fg_color="#080a0f",
-            placeholder_text="Selecione a pasta que contém o checkpoint last.pt"
-        )
-        self.entry_pasta_treinamento.grid(row=2, column=1, padx=10, pady=(0, 10), sticky="ew")
-        self.btn_pasta_treinamento = ctk.CTkButton(
-            params_frame, text="Selecionar pasta", width=130, height=28,
-            command=self.selecionar_pasta_treinamento
-        )
-        self.btn_pasta_treinamento.grid(row=2, column=2, padx=10, pady=(0, 10), sticky="w")
-        self.atualizar_modo_treinamento()
-
-        # Console de Logs do Treinamento
-        lbl_log = ctk.CTkLabel(self.frame_treinamento, text="Logs do Treinamento:",
-                               font=ctk.CTkFont(size=12, weight="bold"), text_color="#94a3b8", anchor="w")
-        lbl_log.pack(fill="x", padx=20, pady=(10, 2))
-
-        self.textbox_log = ctk.CTkTextbox(self.frame_treinamento, height=200, fg_color="#05070a", text_color="#22c55e",
-                                          font=ctk.CTkFont(family="Consolas", size=11))
-        self.textbox_log.pack(fill="both", expand=True, padx=20, pady=(0, 15))
-
-        self.btn_iniciar_treino = ctk.CTkButton(
-            self.frame_treinamento, text="▶ Iniciar Treinamento", width=220, height=38,
-            fg_color="#a855f7", hover_color="#9333ea", font=ctk.CTkFont(size=12, weight="bold"),
-            command=self.iniciar_treinamento_modelo
-        )
-        self.btn_iniciar_treino.pack(padx=20, pady=(0, 20), anchor="w")
-
-        self.btn_pausar_treino = ctk.CTkButton(
-            self.frame_treinamento, text="⏸ Pausar Treinamento", width=220, height=38,
-            fg_color="#d97706", hover_color="#b45309", font=ctk.CTkFont(size=12, weight="bold"),
-            state="disabled", command=self.solicitar_pausa_treinamento
-        )
-        self.btn_pausar_treino.pack(padx=20, pady=(0, 20), anchor="w")
-
     def atualizar_modo_treinamento(self):
         continuar = self.var_modo_treinamento.get() == "continuar"
         estado = "normal" if continuar else "disabled"
@@ -1896,7 +1353,6 @@ class VisoraStudioFrame(ctk.CTkFrame):
 
     def _treinar_yolo_threaded(self):
         caminho_proj = self.project_data.get("caminho", "")
-        pasta_annotations = os.path.join(caminho_proj, "annotations")
         continuar = self.var_modo_treinamento.get() == "continuar"
         pasta_checkpoint = self.entry_pasta_treinamento.get().strip() if continuar else ""
 
@@ -1904,6 +1360,27 @@ class VisoraStudioFrame(ctk.CTkFrame):
             epochs = int(self.entry_epochs.get().strip())
         except ValueError:
             epochs = 50
+
+        try:
+            checkpoint = self.localizar_checkpoint_treinamento(pasta_checkpoint) if continuar else None
+            output_path, paused = train_yolo(
+                caminho_proj, epochs, continuar, checkpoint,
+                should_pause=lambda: self.treino_pausar_solicitado,
+                on_model=lambda model: setattr(self, "modelo_treinamento_ativo", model),
+                log=lambda mensagem: self.after(0, lambda: self.log_treinamento(mensagem)),
+            )
+            self.pasta_ultimo_treinamento = output_path
+            mensagem = (
+                f"Treinamento pausado. Para continuar, selecione a pasta:\n{output_path}"
+                if paused else "Treinamento do modelo YOLO finalizado com sucesso!"
+            )
+            self.after(0, lambda: self._finalizar_treino_com_sucesso(mensagem))
+        except Exception as erro:
+            erro_msg = str(erro)
+            self.after(0, lambda: self._finalizar_treino_com_erro(
+                f"Falha no treinamento YOLO: {erro_msg}"
+            ))
+        return
 
         # Validação simples de rótulos
         if not os.path.exists(pasta_annotations) or not os.listdir(pasta_annotations):
@@ -2043,6 +1520,32 @@ class VisoraStudioFrame(ctk.CTkFrame):
 
     def _treinar_mobile_sam_threaded(self):
         caminho_proj = self.project_data.get("caminho", "")
+        continuar = self.var_modo_treinamento.get() == "continuar"
+        pasta_checkpoint = self.entry_pasta_treinamento.get().strip() if continuar else ""
+        try:
+            epochs = max(1, int(self.entry_epochs.get().strip()))
+        except ValueError:
+            epochs = 50
+
+        try:
+            checkpoint = self.localizar_checkpoint_treinamento(pasta_checkpoint) if continuar else None
+            output_path, paused = train_mobile_sam(
+                caminho_proj, epochs, checkpoint,
+                should_pause=lambda: self.treino_pausar_solicitado,
+                on_model=lambda model: setattr(self, "modelo_treinamento_ativo", model),
+                log=lambda mensagem: self.after(0, lambda: self.log_treinamento(mensagem)),
+            )
+            mensagem = (
+                f"Treinamento MobileSAM pausado. Checkpoint salvo em:\n{output_path}"
+                if paused else f"Treinamento MobileSAM concluído. Melhor modelo salvo em:\n{output_path}"
+            )
+            self.after(0, lambda: self._finalizar_treino_com_sucesso(mensagem))
+        except Exception as erro:
+            erro_msg = str(erro)
+            self.after(0, lambda: self._finalizar_treino_com_erro(
+                f"Falha no treinamento MobileSAM: {erro_msg}"
+            ))
+        return
         if not MOBILE_SAM_DISPONIVEL:
             self.after(0, lambda: self._finalizar_treino_com_erro(
                 "MobileSAM e suas dependências não estão instalados no ambiente."
@@ -2188,9 +1691,6 @@ class VisoraStudioFrame(ctk.CTkFrame):
             self.after(0, self.esconder_carregamento)
             return
 
-        pasta_frames = os.path.join(caminho_proj, "frames")
-        os.makedirs(pasta_frames, exist_ok=True)
-
         modo = self.opcao_extracao.get()
         step_frames = 1
 
@@ -2206,47 +1706,8 @@ class VisoraStudioFrame(ctk.CTkFrame):
             except ValueError:
                 step_frames = int(self.video_fps)
 
-        saved_count = 0
-        cap_temp = cv2.VideoCapture(self.arquivo_selecionado)
-        current_f = 0
-
-        while True:
-            if step_frames > 1:
-                cap_temp.set(cv2.CAP_PROP_POS_FRAMES, current_f)
-
-            ret, frame = cap_temp.read()
-            if not ret:
-                break
-
-            nome_frame = f"frame_{saved_count:05d}.jpg"
-            path_frame = os.path.join(pasta_frames, nome_frame)
-
-            if not os.path.exists(path_frame):
-                cv2.imwrite(path_frame, frame, [cv2.IMWRITE_JPEG_QUALITY, 90])
-
-            saved_count += 1
-            current_f += step_frames
-
-            if step_frames == 1:
-                continue
-            if current_f >= self.total_frames:
-                break
-
-        if step_frames == 1:
-            cap_temp.release()
-            cap_temp = cv2.VideoCapture(self.arquivo_selecionado)
-            saved_count = 0
-            while True:
-                ret, frame = cap_temp.read()
-                if not ret:
-                    break
-                nome_frame = f"frame_{saved_count:05d}.jpg"
-                path_frame = os.path.join(pasta_frames, nome_frame)
-                if not os.path.exists(path_frame):
-                    cv2.imwrite(path_frame, frame, [cv2.IMWRITE_JPEG_QUALITY, 90])
-                saved_count += 1
-
-        cap_temp.release()
+        pasta_frames = os.path.join(caminho_proj, "frames")
+        extract_frames(self.arquivo_selecionado, pasta_frames, step_frames, self.total_frames)
 
         def finalizar_carregamento():
             self.esconder_carregamento()
@@ -2613,15 +2074,3 @@ class VisoraStudioFrame(ctk.CTkFrame):
             self.cap.release()
             self.cap = None
         self.btn_play.configure(text="▶ Play", fg_color="#2563eb")
-
-
-if __name__ == "__main__":
-    ctk.set_appearance_mode("dark")
-    app = ctk.CTk()
-    app.title("Visora Studio")
-    app.geometry("1280x720")
-
-    frame = VisoraStudioFrame(app)
-    frame.pack(fill="both", expand=True)
-
-    app.mainloop()

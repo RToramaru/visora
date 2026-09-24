@@ -1,11 +1,12 @@
-import json
 import os
-from datetime import datetime
 import tkinter as tk
 from tkinter import filedialog, messagebox
 import customtkinter as ctk
 
-from editor import VisoraStudioFrame
+from domain.project import validar_project_data
+from services.project_discovery import inferir_topologia
+from services.recent_projects import RecentProjectsStore
+from ui.studio import VisoraStudioFrame
 
 ctk.set_appearance_mode("Dark")
 ctk.set_default_color_theme("blue")
@@ -62,6 +63,7 @@ class VisoraAppHome(ctk.CTk):
         self.minsize(950, 600)
         self.configure(fg_color="#0b0e14")
 
+        self.recent_projects_store = RecentProjectsStore(ARQUIVO_RECENTES)
         self.projetos_recentes = self.carregar_recentes()[:5]
         self.overlay_canvas = None
         self.selected_project_data = None
@@ -75,31 +77,14 @@ class VisoraAppHome(ctk.CTk):
         self.build_main_content()
 
     def carregar_recentes(self):
-        if os.path.exists(ARQUIVO_RECENTES):
-            try:
-                with open(ARQUIVO_RECENTES, "r", encoding="utf-8") as f:
-                    dados = json.load(f)
-                    return dados if isinstance(dados, list) else []
-            except Exception:
-                pass
-        return []
+        return self.recent_projects_store.load()
 
     def salvar_recentes(self):
-        with open(ARQUIVO_RECENTES, "w", encoding="utf-8") as f:
-            json.dump(self.projetos_recentes[:5], f, indent=4, ensure_ascii=False)
+        self.recent_projects_store.save(self.projetos_recentes)
 
     def adicionar_aos_recentes(self, nome, caminho, topologia, volume="0 itens"):
-        novo = {
-            "nome": nome,
-            "caminho": caminho,
-            "volume": volume,
-            "topologia": topologia,
-            "modificado": f"Modificado hoje às {datetime.now().strftime('%H:%M')}"
-        }
-        self.projetos_recentes = [p for p in self.projetos_recentes if p["nome"] != nome]
-        self.projetos_recentes.insert(0, novo)
-        self.projetos_recentes = self.projetos_recentes[:5]
-        self.salvar_recentes()
+        novo = self.recent_projects_store.upsert(nome, caminho, topologia, volume)
+        self.projetos_recentes = self.recent_projects_store.load()
         return novo
 
     def abrir_workspace_studio(self, project_data):
@@ -367,11 +352,10 @@ class VisoraAppHome(ctk.CTk):
             caminho = entry_path.get().strip()
             topologia = var_tipo.get()
 
-            if not nome:
-                messagebox.showerror("Erro de Validação", "O nome do projeto é obrigatório.")
-                return
-            if not caminho or not os.path.isdir(caminho):
-                messagebox.showerror("Erro de Validação", "Selecione uma pasta válida para o projeto.")
+            try:
+                validar_project_data({"nome": nome, "caminho": caminho, "topologia": topologia})
+            except ValueError as erro:
+                messagebox.showerror("Erro de Validação", str(erro))
                 return
 
             novo_proj = self.adicionar_aos_recentes(nome, caminho, topologia)
@@ -390,14 +374,7 @@ class VisoraAppHome(ctk.CTk):
         pasta = filedialog.askdirectory(title="Selecione a pasta do projeto existente")
         if pasta:
             nome = os.path.basename(pasta)
-            pasta_annotations = os.path.join(pasta, "annotations")
-            topologia = "Bounding Boxes"
-            if os.path.isdir(pasta_annotations):
-                arquivos_anotacao = os.listdir(pasta_annotations)
-                if any(nome_arquivo.lower().endswith(".json") for nome_arquivo in arquivos_anotacao):
-                    topologia = "Instance Mask"
-                elif any(nome_arquivo.lower().endswith(".xml") for nome_arquivo in arquivos_anotacao):
-                    topologia = "Bounding Boxes"
+            topologia = inferir_topologia(pasta)
             novo_proj = self.adicionar_aos_recentes(nome, pasta, topologia)
             self.abrir_workspace_studio(novo_proj)
 
