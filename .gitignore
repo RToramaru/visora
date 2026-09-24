@@ -1,0 +1,40 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Ambientes e empacotamento
+.venv/
+venv/
+env/
+.env
+.egg-info/
+build/
+dist/
+
+# IDE e sistema operacional
+.idea/
+.vscode/
+.vs/
+.DS_Store
+Thumbs.db
+
+# Dados locais e arquivos gerados pela aplicação
+recentes.json
+dataset_yolo.yaml
+runs/
+exports/
+
+# Checkpoints e modelos gerados
+mobile_sam.pt
+*.onnx
+*.engine
+*.torchscript
+*.pth
+
+# Logs e arquivos temporários
+*.log
+*.tmp
